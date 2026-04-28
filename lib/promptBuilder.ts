@@ -276,6 +276,16 @@ export function stripHighlight(s: string): string {
   return s.replace(/\[\[\/?B\]\]/g, "");
 }
 
+// 복사용: 결과 본문 끝에 붙는 `// model: ...` 같은 안내 주석 라인을 제거.
+// 빈 줄까지 포함해서 정리하므로 클립보드에는 실제 프롬프트만 들어감.
+export function stripModelComment(s: string): string {
+  return s
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("//"))
+    .join("\n")
+    .replace(/\n+$/g, "");
+}
+
 function resolveRatio(input: PromptInput): string {
   if (input.ratio === "custom") return input.customRatio.trim() || "1:1";
   return input.ratio;
@@ -328,15 +338,15 @@ function forbidToKorean(forbid: PromptInput["forbid"]): string[] {
 
 function buildKoreanSummary(input: PromptInput): string {
   const lines: string[] = [];
-  lines.push(`작업 유형: ${hi(WORK_TYPE_LABEL[input.workType])}`);
-  lines.push(`스타일: ${hi(STYLE_LABEL[input.style])}`);
-  lines.push(`비율: ${hi(resolveRatio(input))}`);
+  lines.push(`작업 유형: ${WORK_TYPE_LABEL[input.workType]}`);
+  lines.push(`스타일: ${STYLE_LABEL[input.style]}`);
+  lines.push(`비율: ${resolveRatio(input)}`);
   if (input.hasReferenceImage) {
-    lines.push(`참고 이미지 역할: ${hi(REFERENCE_ROLE_LABEL[input.referenceRole])}`);
+    lines.push(`참고 이미지 역할: ${REFERENCE_ROLE_LABEL[input.referenceRole]}`);
   }
   lines.push(`요청 내용: ${hi(input.request.trim() || "(미입력)")}`);
   const forbids = forbidToKorean(input.forbid);
-  if (forbids.length > 0) lines.push(`금지 요소: ${hi(forbids.join(", "))}`);
+  if (forbids.length > 0) lines.push(`금지 요소: ${forbids.join(", ")}`);
   return lines.join("\n");
 }
 
@@ -349,9 +359,9 @@ function buildGptImage(input: PromptInput): string {
   const enRequest = (input.englishRequest ?? "").trim();
 
   const parts: string[] = [];
-  parts.push(`Create ${hi(work)}.`);
+  parts.push(`Create ${work}.`);
   if (input.hasReferenceImage) {
-    parts.push(`Use the attached reference image to ${hi(REFERENCE_ROLE_EN[input.referenceRole])}.`);
+    parts.push(`Use the attached reference image to ${REFERENCE_ROLE_EN[input.referenceRole]}.`);
   }
   if (enRequest && koRequest) {
     parts.push(`The concept from the designer is: "${hi(enRequest)}".`);
@@ -359,9 +369,9 @@ function buildGptImage(input: PromptInput): string {
   } else if (koRequest) {
     parts.push(`The concept from the designer is: "${hi(koRequest)}".`);
   }
-  parts.push(`It should be ${hi(style)}.`);
-  parts.push(`Compose the image at ${hi(ratio)}, with a clear focal point and balanced composition.`);
-  if (forbids.length > 0) parts.push(`Important constraints: ${hi(forbids.join(", "))}.`);
+  parts.push(`It should be ${style}.`);
+  parts.push(`Compose the image at ${ratio}, with a clear focal point and balanced composition.`);
+  if (forbids.length > 0) parts.push(`Important constraints: ${forbids.join(", ")}.`);
   parts.push("Keep the result production-ready for game art use, with clean edges and consistent lighting.");
   return parts.join(" ");
 }
@@ -377,17 +387,17 @@ function buildNanoBanana(
   const ratio = resolveRatio(input);
 
   const keepLines = [
-    hi(workKeyword),
-    hi(styleKeyword),
-    `aspect ratio ${hi(ratio)}`,
+    workKeyword,
+    styleKeyword,
+    `aspect ratio ${ratio}`,
     "clean composition, balanced lighting",
   ];
   if (input.hasReferenceImage) {
-    keepLines.unshift(`from the reference image: ${hi(REFERENCE_ROLE_EN[input.referenceRole])}`);
+    keepLines.unshift(`from the reference image: ${REFERENCE_ROLE_EN[input.referenceRole]}`);
   }
   if (model === "nano_banana_2") {
     keepLines.push("target resolution: 2K (or higher)");
-    keepLines.push(`aspect ratio precise: ${hi(ratio)}`);
+    keepLines.push(`aspect ratio precise: ${ratio}`);
   } else if (model === "nano_banana_pro") {
     keepLines.push("target resolution: 4K, professional print-ready");
     keepLines.push("text rendering: enabled, multilingual");
@@ -403,13 +413,13 @@ function buildNanoBanana(
   } else if (koRequest) {
     changeLines.push(`apply this concept: ${hi(koRequest)}`);
   }
-  changeLines.push(`adjust visual mood to match ${hi(STYLE_LABEL[input.style])} style`);
+  changeLines.push(`adjust visual mood to match ${STYLE_LABEL[input.style]} style`);
 
   const removeLinesRaw = forbidToEnglish(input.forbid);
   const removeLines =
     removeLinesRaw.length === 0
       ? ["anything that distracts from the main subject"]
-      : removeLinesRaw.map(hi);
+      : removeLinesRaw;
 
   const block = (label: string, lines: string[]) =>
     `${label}:\n` + lines.map((l) => `- ${l}`).join("\n");
@@ -434,28 +444,28 @@ function buildMidjourney(
 
   const keywords: string[] = [];
   if (userRequest) keywords.push(hi(userRequest));
-  keywords.push(hi(workKeyword));
-  keywords.push(hi(styleKeyword));
+  keywords.push(workKeyword);
+  keywords.push(styleKeyword);
   keywords.push("high quality", "clean composition");
 
   const negatives = forbidToEnglish(input.forbid);
   let base = keywords.join(", ");
-  if (negatives.length > 0) base += `, ${hi(negatives.join(", "))}`;
+  if (negatives.length > 0) base += `, ${negatives.join(", ")}`;
 
   const refHint = input.hasReferenceImage
-    ? ` ${hi("--oref [reference_image_url] --ow 100")}`
+    ? ` --oref [reference_image_url] --ow 100`
     : "";
 
   let suffix = "";
   let comment = "";
   if (model === "mj_v8_alpha") {
-    suffix = ` ${hi("--hd")}`;
+    suffix = ` --hd`;
     comment = "\n// generated for alpha.midjourney.com (V8 Alpha)";
   } else if (model === "mj_v8_1_alpha") {
     comment = "\n// generated for alpha.midjourney.com (V8.1 Alpha, default HD)";
   }
 
-  return `${base} ${hi(ar)}${refHint}${suffix}${comment}`;
+  return `${base} ${ar}${refHint}${suffix}${comment}`;
 }
 
 // v0.5 정정: Niji 빌더는 nijiKeywords 7항목이 하나라도 채워져 있으면 그것을
@@ -488,32 +498,32 @@ function buildNiji(
   const keywords: string[] = [];
 
   if (nijiFilled && niji) {
-    // Niji 사양 권장 순서대로 채워진 항목만 추가
+    // Niji 사양 권장 순서대로 채워진 항목만 추가 (8번은 6/7번이 아니므로 하이라이트 X)
     for (const k of nijiOrder) {
       const v = (niji[k] ?? "").trim();
-      if (v) keywords.push(hi(v));
+      if (v) keywords.push(v);
     }
   } else {
-    // 폴백: 영어 textarea 사용
+    // 폴백: 영어 textarea(7번) 또는 한글 요청(6번) 사용 → 하이라이트 O
     const userRequest = enRequest || koRequest;
     if (userRequest) keywords.push(hi(userRequest));
   }
 
   // 작업유형 + 스타일 + 기본 매체 키워드 항상 추가
-  keywords.push(hi(workKeyword));
-  keywords.push(hi(styleKeyword));
+  keywords.push(workKeyword);
+  keywords.push(styleKeyword);
   keywords.push("anime style", "key visual", "clean composition");
 
   const negatives = forbidToEnglish(input.forbid);
   let base = keywords.join(", ");
-  if (negatives.length > 0) base += `, ${hi(negatives.join(", "))}`;
+  if (negatives.length > 0) base += `, ${negatives.join(", ")}`;
 
   const refHint = input.hasReferenceImage
-    ? ` ${hi("--cref [reference_image_url] --cw 100")}`
+    ? ` --cref [reference_image_url] --cw 100`
     : "";
 
   const nijiVersion = model === "niji_6" ? "--niji 6" : "--niji 7";
-  return `${base} ${hi(ar)} ${hi(nijiVersion)}${refHint}`;
+  return `${base} ${ar} ${nijiVersion}${refHint}`;
 }
 
 function appendModelComment(body: string, model: ModelKey): string {
@@ -568,9 +578,9 @@ function buildRevision(input: PromptInput): string {
   lines.push("Make the image cleaner and easier to read. Reduce messy texture, noise, clutter, and excessive details.");
   lines.push("");
   lines.push("Original brief:");
-  lines.push(`- Work type: ${hi(workKeyword)}`);
-  lines.push(`- Style: ${hi(styleKeyword)}`);
-  lines.push(`- Aspect ratio: ${hi(ratio)}`);
+  lines.push(`- Work type: ${workKeyword}`);
+  lines.push(`- Style: ${styleKeyword}`);
+  lines.push(`- Aspect ratio: ${ratio}`);
   if (enRequest) {
     lines.push(`- Concept: "${hi(enRequest)}"`);
     if (koRequest) lines.push(`- Original Korean: "${hi(koRequest)}"`);
@@ -585,12 +595,12 @@ function buildRevision(input: PromptInput): string {
   lines.push("- Overall composition and focal point");
   lines.push("- Style consistency with the original direction");
   if (input.hasReferenceImage) {
-    lines.push(`- The ${hi(REFERENCE_ROLE_LABEL[input.referenceRole])} guidance from the reference image`);
+    lines.push(`- The ${REFERENCE_ROLE_LABEL[input.referenceRole]} guidance from the reference image`);
   }
   lines.push("");
   lines.push("Must avoid:");
   if (forbids.length > 0) {
-    forbids.forEach((f) => lines.push(`- ${hi(f)}`));
+    forbids.forEach((f) => lines.push(`- ${f}`));
   } else {
     lines.push("- anything that distracts from the main subject");
   }

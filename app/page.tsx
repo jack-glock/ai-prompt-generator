@@ -25,6 +25,7 @@ import {
   buildPrompts,
   buildPromptFor,
   stripHighlight,
+  stripModelComment,
   PromptInput,
   PromptOutput,
   WorkType,
@@ -398,7 +399,7 @@ export default function HomePage() {
                 {FORBID_ITEMS.map((item) => (
                   <label
                     key={item.key}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                    className="flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-xl border border-slate-200 px-3 py-2.5 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                   >
                     <input
                       type="checkbox"
@@ -445,7 +446,7 @@ export default function HomePage() {
                 <Wand2 size={20} /> 프롬프트 확인
               </button>
               <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">
-                옵션을 바꾸면 결과는 자동 갱신됩니다. <span className="text-blue-600 dark:text-blue-400">파란색</span>은 사용자 옵션·입력 자리입니다.
+                옵션을 바꾸면 결과는 자동 갱신됩니다. <span className="text-blue-600 dark:text-blue-400">파란색</span>은 한글/영어 요청 텍스트입니다.
               </p>
             </Section>
 
@@ -608,7 +609,7 @@ function ResultCard({
   }, [content]);
 
   const handleCopy = async () => {
-    const plain = stripHighlight(content);
+    const plain = stripModelComment(stripHighlight(content));
     try {
       await navigator.clipboard.writeText(plain);
       setCopied(true);
@@ -674,7 +675,7 @@ function ModelGroupCard({
   }, [content]);
 
   const handleCopy = async () => {
-    const plain = stripHighlight(content);
+    const plain = stripModelComment(stripHighlight(content));
     try {
       await navigator.clipboard.writeText(plain);
       setCopied(true);
