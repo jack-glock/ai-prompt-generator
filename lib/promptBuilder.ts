@@ -1,11 +1,7 @@
 // 프롬프트 생성 로직
-// v0.4: 스타일 16종 + 모델 12종 분기 + 결과 파란색 하이라이트 토큰
+// v0.5: 다크 모드 + Niji 전용 7항목 입력 + 모델 12종 분기 + 스타일 16종 + 하이라이트 토큰
 // 정책 근거: docs/design-docs/PROMPT_STRATEGY.md §2 (재개정판)
 // 모델 사양: docs/model-specs/
-//
-// 하이라이트 토큰: 사용자가 선택/입력한 부분은 [[B]]...[[/B]]로 감싸짐.
-// 결과 카드 컴포넌트(app/page.tsx)가 토큰을 파싱해 파란색 span으로 렌더링.
-// 복사 시는 stripHighlight()로 토큰 제거 후 클립보드 복사.
 
 export type WorkType = "banner" | "character" | "frame" | "background" | "icon";
 
@@ -35,9 +31,51 @@ export type ReferenceRole =
   | "character"
   | "material";
 
+// v0.5 신규: Niji 빌더 전용 7항목 입력. 비어 있으면 영어 textarea를 폴백으로 사용.
+export interface NijiKeywords {
+  appearance: string; // 외형 (성별, 연령, 헤어, 눈색)
+  expression: string; // 표정 / 감정
+  pose: string;       // 포즈 / 액션
+  outfit: string;     // 의상 / 액세서리
+  background: string; // 배경 / 환경
+  angle: string;      // 화각 / 구도 (close-up, full body 등)
+  medium: string;     // 매체 (anime style, cel shading, key visual 등)
+}
+
+export const EMPTY_NIJI_KEYWORDS: NijiKeywords = {
+  appearance: "",
+  expression: "",
+  pose: "",
+  outfit: "",
+  background: "",
+  angle: "",
+  medium: "",
+};
+
+export const NIJI_KEYWORD_LABEL: Record<keyof NijiKeywords, string> = {
+  appearance: "외형",
+  expression: "표정",
+  pose: "포즈",
+  outfit: "의상",
+  background: "배경",
+  angle: "화각",
+  medium: "매체",
+};
+
+export const NIJI_KEYWORD_PLACEHOLDER: Record<keyof NijiKeywords, string> = {
+  appearance: "e.g. teenage girl, long silver hair, emerald green eyes",
+  expression: "e.g. determined gaze, slight smile",
+  pose: "e.g. dynamic action pose, holding a katana",
+  outfit: "e.g. fantasy armor with gold trim",
+  background: "e.g. cherry blossom courtyard at dusk",
+  angle: "e.g. close-up portrait, three-quarter view",
+  medium: "e.g. anime style, cel shading, key visual",
+};
+
 export interface PromptInput {
   request: string;
   englishRequest?: string;
+  nijiKeywords?: NijiKeywords;
   workType: WorkType;
   style: StyleType;
   ratio: RatioType;
@@ -234,7 +272,6 @@ function hi(text: string): string {
   return `${B}${text}${E}`;
 }
 
-/** 결과 카드 복사 시 토큰 제거용 헬퍼 (page.tsx에서 import해서 사용) */
 export function stripHighlight(s: string): string {
   return s.replace(/\[\[\/?B\]\]/g, "");
 }
@@ -421,19 +458,48 @@ function buildMidjourney(
   return `${base} ${hi(ar)}${refHint}${suffix}${comment}`;
 }
 
+// v0.5 정정: Niji 빌더는 nijiKeywords 7항목이 하나라도 채워져 있으면 그것을
+// 외형/표정/포즈/의상/배경/화각/매체 순서로 사용. 모두 비어 있으면 영어
+// textarea를 폴백으로 사용 (v0.4 동작).
 function buildNiji(
   input: PromptInput,
   model: "niji_6" | "niji_7" = "niji_7"
 ): string {
   const koRequest = input.request.trim();
   const enRequest = (input.englishRequest ?? "").trim();
-  const userRequest = enRequest || koRequest;
   const workKeyword = WORK_TYPE_EN[input.workType].keyword;
   const styleKeyword = STYLE_EN[input.style].keyword;
   const ar = ratioForMidjourney(input);
 
+  const niji = input.nijiKeywords;
+  const nijiOrder: (keyof NijiKeywords)[] = [
+    "appearance",
+    "expression",
+    "pose",
+    "outfit",
+    "background",
+    "angle",
+    "medium",
+  ];
+  const nijiFilled =
+    niji != null &&
+    nijiOrder.some((k) => (niji[k] ?? "").trim().length > 0);
+
   const keywords: string[] = [];
-  if (userRequest) keywords.push(hi(userRequest));
+
+  if (nijiFilled && niji) {
+    // Niji 사양 권장 순서대로 채워진 항목만 추가
+    for (const k of nijiOrder) {
+      const v = (niji[k] ?? "").trim();
+      if (v) keywords.push(hi(v));
+    }
+  } else {
+    // 폴백: 영어 textarea 사용
+    const userRequest = enRequest || koRequest;
+    if (userRequest) keywords.push(hi(userRequest));
+  }
+
+  // 작업유형 + 스타일 + 기본 매체 키워드 항상 추가
   keywords.push(hi(workKeyword));
   keywords.push(hi(styleKeyword));
   keywords.push("anime style", "key visual", "clean composition");

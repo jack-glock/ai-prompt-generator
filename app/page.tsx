@@ -18,6 +18,8 @@ import {
   Check,
   X,
   Info,
+  Sun,
+  Moon,
 } from "lucide-react";
 import {
   buildPrompts,
@@ -30,6 +32,10 @@ import {
   RatioType,
   ReferenceRole,
   ModelKey,
+  NijiKeywords,
+  EMPTY_NIJI_KEYWORDS,
+  NIJI_KEYWORD_LABEL,
+  NIJI_KEYWORD_PLACEHOLDER,
   WORK_TYPE_LABEL,
   STYLE_LABEL,
   REFERENCE_ROLE_LABEL,
@@ -75,6 +81,17 @@ const FORBID_ITEMS: { key: keyof PromptInput["forbid"]; label: string }[] = [
   { key: "overDetail", label: "과한 디테일 금지" },
 ];
 
+// Niji 7항목 순서 (외형 → 표정 → 포즈 → 의상 → 배경 → 화각 → 매체)
+const NIJI_KEYS: (keyof NijiKeywords)[] = [
+  "appearance",
+  "expression",
+  "pose",
+  "outfit",
+  "background",
+  "angle",
+  "medium",
+];
+
 const DEFAULT_FORBID: PromptInput["forbid"] = {
   text: true,
   logo: true,
@@ -97,6 +114,7 @@ const NIJI_OPTIONS: ModelKey[] = ["niji_7", "niji_6"];
 export default function HomePage() {
   const [request, setRequest] = useState(DEFAULT_REQUEST_KO);
   const [englishRequest, setEnglishRequest] = useState(DEFAULT_REQUEST_EN);
+  const [nijiKeywords, setNijiKeywords] = useState<NijiKeywords>(EMPTY_NIJI_KEYWORDS);
   const [workType, setWorkType] = useState<WorkType>("banner");
   const [style, setStyle] = useState<StyleType>("casual_game");
   const [ratio, setRatio] = useState<RatioType>("16:9");
@@ -112,10 +130,28 @@ export default function HomePage() {
   const [mjModel, setMjModel] = useState<ModelKey>("mj_v8_1_alpha");
   const [nijiModel, setNijiModel] = useState<ModelKey>("niji_7");
 
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    setDark(document.documentElement.classList.contains("dark"));
+  }, []);
+
+  const toggleDark = () => {
+    const next = !dark;
+    setDark(next);
+    if (next) {
+      document.documentElement.classList.add("dark");
+      try { localStorage.setItem("theme", "dark"); } catch {}
+    } else {
+      document.documentElement.classList.remove("dark");
+      try { localStorage.setItem("theme", "light"); } catch {}
+    }
+  };
+
   const promptInput: PromptInput = useMemo(
     () => ({
       request,
       englishRequest,
+      nijiKeywords,
       workType,
       style,
       ratio,
@@ -124,7 +160,7 @@ export default function HomePage() {
       hasReferenceImage: referenceImage !== null,
       forbid,
     }),
-    [request, englishRequest, workType, style, ratio, customRatio, referenceRole, referenceImage, forbid]
+    [request, englishRequest, nijiKeywords, workType, style, ratio, customRatio, referenceRole, referenceImage, forbid]
   );
 
   const result: PromptOutput = useMemo(() => buildPrompts(promptInput), [promptInput]);
@@ -173,6 +209,7 @@ export default function HomePage() {
   const handleReset = () => {
     setRequest(DEFAULT_REQUEST_KO);
     setEnglishRequest(DEFAULT_REQUEST_EN);
+    setNijiKeywords(EMPTY_NIJI_KEYWORDS);
     setWorkType("banner");
     setStyle("casual_game");
     setRatio("16:9");
@@ -185,7 +222,6 @@ export default function HomePage() {
   };
 
   const handleSave = () => {
-    // .txt 파일에는 하이라이트 토큰 없는 plain text로 저장
     const text = [
       "=== AI Prompt Generator 결과 ===",
       `생성 시각: ${new Date().toLocaleString("ko-KR")}`,
@@ -226,28 +262,37 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6 text-slate-900">
+    <div className="min-h-screen bg-slate-100 p-6 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-6 flex flex-col gap-3 rounded-3xl bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+        <header className="mb-6 flex flex-col gap-3 rounded-3xl bg-white p-6 shadow-sm dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="mb-1 text-sm font-semibold text-slate-500">AI Prompt Generator</p>
+            <p className="mb-1 text-sm font-semibold text-slate-500 dark:text-slate-400">AI Prompt Generator</p>
             <h1 className="text-3xl font-black tracking-tight">이미지 프롬프트 자동 생성기</h1>
-            <p className="mt-2 text-slate-600">
+            <p className="mt-2 text-slate-600 dark:text-slate-400">
               한글 요청을 GPT Image / Nano Banana / Midjourney / Niji 용 영문 프롬프트로 변환합니다.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={toggleDark}
+              aria-label={dark ? "라이트 모드로 전환" : "다크 모드로 전환"}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+            >
+              {dark ? <Sun size={18} /> : <Moon size={18} />}
+              {dark ? "라이트" : "다크"}
+            </button>
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 font-semibold hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
             >
               <RefreshCcw size={18} /> 초기화
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 font-semibold text-white shadow-sm hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 font-semibold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
             >
               <Save size={18} /> 저장
             </button>
@@ -255,7 +300,7 @@ export default function HomePage() {
         </header>
 
         <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-          <aside className="space-y-5 rounded-3xl bg-white p-6 shadow-sm">
+          <aside className="space-y-5 rounded-3xl bg-white p-6 shadow-sm dark:bg-slate-900">
             <Section title="1. 작업 유형">
               <div className="grid grid-cols-5 gap-2">
                 {WORK_TYPES.map((w) => (
@@ -284,7 +329,7 @@ export default function HomePage() {
                   value={customRatio}
                   onChange={(e) => setCustomRatio(e.target.value)}
                   placeholder="예: 1920x1080 또는 21:9"
-                  className="mt-3 w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-slate-900"
+                  className="mt-3 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
                 />
               )}
             </Section>
@@ -297,22 +342,24 @@ export default function HomePage() {
                     onClick={() => fileInputRef.current?.click()}
                     className={`flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition ${
                       dragOver
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100"
+                        ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-300"
+                        : "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
                     }`}
                   >
                     <ImagePlus size={26} />
                     <span className="text-sm font-semibold">
                       {dragOver ? "여기에 놓아 주세요" : "이미지 업로드"}
                     </span>
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-slate-400 dark:text-slate-500">
                       클릭하거나 파일을 끌어다 놓기 (jpg, png)
                     </span>
                   </button>
                 ) : (
                   <div
                     className={`relative h-40 w-full overflow-hidden rounded-2xl border-2 transition ${
-                      dragOver ? "border-blue-500 bg-blue-50" : "border-slate-200 bg-slate-50"
+                      dragOver
+                        ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950"
+                        : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800"
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -320,12 +367,12 @@ export default function HomePage() {
                     <button
                       type="button"
                       onClick={handleRemoveImage}
-                      className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-900"
+                      className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-900 dark:bg-slate-100/80 dark:text-slate-900 dark:hover:bg-slate-100"
                     >
                       <X size={12} /> 제거
                     </button>
                     {dragOver && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-blue-500/10 text-sm font-semibold text-blue-700">
+                      <div className="absolute inset-0 flex items-center justify-center bg-blue-500/10 text-sm font-semibold text-blue-700 dark:bg-blue-400/20 dark:text-blue-300">
                         드롭하면 새 이미지로 교체됩니다
                       </div>
                     )}
@@ -333,7 +380,7 @@ export default function HomePage() {
                 )}
               </div>
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-              <p className="mt-2 text-xs text-slate-400">업로드 이미지는 PC에만 저장되며 외부로 전송되지 않습니다.</p>
+              <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">업로드 이미지는 PC에만 저장되며 외부로 전송되지 않습니다.</p>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {REFERENCE_ROLES.map((r) => (
                   <ChipSm
@@ -351,13 +398,13 @@ export default function HomePage() {
                 {FORBID_ITEMS.map((item) => (
                   <label
                     key={item.key}
-                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm hover:bg-slate-50"
+                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
                   >
                     <input
                       type="checkbox"
                       checked={forbid[item.key]}
                       onChange={(e) => setForbid({ ...forbid, [item.key]: e.target.checked })}
-                      className="h-4 w-4 accent-slate-900"
+                      className="h-4 w-4 accent-slate-900 dark:accent-slate-100"
                     />
                     {item.label}
                   </label>
@@ -366,7 +413,7 @@ export default function HomePage() {
             </Section>
 
             <Section title="6. 한글 요청 (메모용)">
-              <div className="mb-2 inline-flex items-start gap-1.5 rounded-xl bg-blue-50 p-2 text-xs text-blue-800">
+              <div className="mb-2 inline-flex items-start gap-1.5 rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
                 <Info size={14} className="mt-0.5 shrink-0" />
                 <span>
                   여기에 한글로 자유롭게 적어 주세요. 그 다음 ChatGPT 등에서
@@ -378,7 +425,7 @@ export default function HomePage() {
               <textarea
                 value={request}
                 onChange={(e) => setRequest(e.target.value)}
-                className="h-28 w-full resize-none rounded-2xl border border-slate-200 p-4 text-sm leading-6 outline-none focus:border-slate-900"
+                className="h-28 w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
                 placeholder="예: 쥬라기 테마 슬롯 배너. 저녁 느낌. 중앙은 비워줘."
               />
             </Section>
@@ -387,19 +434,46 @@ export default function HomePage() {
               <textarea
                 value={englishRequest}
                 onChange={(e) => setEnglishRequest(e.target.value)}
-                className="h-28 w-full resize-none rounded-2xl border border-slate-200 p-4 text-sm leading-6 outline-none focus:border-slate-900"
+                className="h-28 w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
                 placeholder="e.g. A Jurassic-themed slot banner with an evening atmosphere..."
               />
               <button
                 type="button"
                 onClick={handleScrollToResults}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-4 text-base font-bold text-white shadow-sm hover:bg-slate-800"
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 py-4 text-base font-bold text-white shadow-sm hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
               >
                 <Wand2 size={20} /> 프롬프트 확인
               </button>
-              <p className="mt-2 text-center text-xs text-slate-400">
-                옵션을 바꾸면 결과는 자동 갱신됩니다. <span className="text-blue-600">파란색</span>은 사용자 옵션·입력 자리입니다.
+              <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">
+                옵션을 바꾸면 결과는 자동 갱신됩니다. <span className="text-blue-600 dark:text-blue-400">파란색</span>은 사용자 옵션·입력 자리입니다.
               </p>
+            </Section>
+
+            <Section title="8. Niji 전용 입력 (선택)">
+              <div className="mb-2 inline-flex items-start gap-1.5 rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Niji는 외형/표정/포즈/의상/배경/화각/매체 7항목을 분리해서 적으면 결과 품질이 좋습니다. <strong>한 항목이라도 채우면 Niji 결과만 이 7항목을 사용</strong>합니다 (다른 모델 카드에는 영향 없음). 모두 비우면 위 영어 요청을 폴백으로 사용.
+                </span>
+              </div>
+              <div className="space-y-2">
+                {NIJI_KEYS.map((k) => (
+                  <div key={k}>
+                    <label className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {NIJI_KEYWORD_LABEL[k]}
+                    </label>
+                    <input
+                      type="text"
+                      value={nijiKeywords[k]}
+                      onChange={(e) =>
+                        setNijiKeywords({ ...nijiKeywords, [k]: e.target.value })
+                      }
+                      placeholder={NIJI_KEYWORD_PLACEHOLDER[k]}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
+                    />
+                  </div>
+                ))}
+              </div>
             </Section>
           </aside>
 
@@ -435,7 +509,7 @@ export default function HomePage() {
 
             <ModelGroupCard
               title="Niji"
-              description="애니/캐릭터 키워드 + --niji (영어만)"
+              description="애니/캐릭터 키워드 + --niji (8번 7항목 우선, 비면 영어 요청 폴백)"
               options={NIJI_OPTIONS}
               selected={nijiModel}
               onSelect={setNijiModel}
@@ -450,8 +524,8 @@ export default function HomePage() {
           </main>
         </div>
 
-        <footer className="mt-8 text-center text-xs text-slate-400">
-          v0.4 · 모델 12종 · 스타일 16종 · 드래그 앤 드롭 · 사용자 입력 하이라이트
+        <footer className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500">
+          v0.5 · 모델 12종 · 스타일 16종 · 다크 모드 · Niji 7항목 입력
         </footer>
       </div>
     </div>
@@ -461,7 +535,7 @@ export default function HomePage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-3 text-sm font-bold text-slate-500">{title}</h2>
+      <h2 className="mb-3 text-sm font-bold text-slate-500 dark:text-slate-400">{title}</h2>
       {children}
     </section>
   );
@@ -474,8 +548,8 @@ function ChipSm({ label, active, onClick }: { label: string; active: boolean; on
       onClick={onClick}
       className={`w-full rounded-full border px-2 py-2 text-sm transition ${
         active
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
       }`}
     >
       {label}
@@ -490,8 +564,8 @@ function ChipXs({ label, active, onClick }: { label: string; active: boolean; on
       onClick={onClick}
       className={`w-full truncate rounded-full border px-1.5 py-1.5 text-xs transition ${
         active
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+          ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
+          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
       }`}
     >
       {label}
@@ -499,9 +573,7 @@ function ChipXs({ label, active, onClick }: { label: string; active: boolean; on
   );
 }
 
-// === 하이라이트 토큰을 파란색 span으로 렌더링 ===
 function HighlightedContent({ content }: { content: string }) {
-  // [[B]]...[[/B]] 토큰 단위로 split. \s\S로 줄바꿈도 포함.
   const parts = content.split(/(\[\[B\]\][\s\S]*?\[\[\/B\]\])/g);
   return (
     <>
@@ -509,7 +581,7 @@ function HighlightedContent({ content }: { content: string }) {
         const m = /^\[\[B\]\]([\s\S]*?)\[\[\/B\]\]$/.exec(p);
         if (m) {
           return (
-            <span key={i} className="text-blue-600">
+            <span key={i} className="text-blue-600 dark:text-blue-400">
               {m[1]}
             </span>
           );
@@ -554,26 +626,26 @@ function ResultCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-bold text-slate-900">{title}</h3>
-          <p className="text-xs text-slate-500">{description}</p>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
         </div>
         <button
           type="button"
           onClick={handleCopy}
           className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
             copied
-              ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+              ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
           }`}
         >
           {copied ? <Check size={15} /> : <Copy size={15} />}
           {copied ? "복사됨" : "복사"}
         </button>
       </div>
-      <div className="min-h-[118px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700">
+      <div className="min-h-[118px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
         <HighlightedContent content={content} />
       </div>
     </div>
@@ -620,17 +692,17 @@ function ModelGroupCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h3 className="text-base font-bold text-slate-900">{title}</h3>
-          <p className="text-xs text-slate-500">{description}</p>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
         </div>
         <div className="flex items-center gap-2">
           <select
             value={selected}
             onChange={(e) => onSelect(e.target.value as ModelKey)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:border-slate-900 focus:outline-none"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:border-slate-900 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:focus:border-slate-300"
           >
             {options.map((opt) => (
               <option key={opt} value={opt}>
@@ -643,8 +715,8 @@ function ModelGroupCard({
             onClick={handleCopy}
             className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
               copied
-                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
             }`}
           >
             {copied ? <Check size={15} /> : <Copy size={15} />}
@@ -652,7 +724,7 @@ function ModelGroupCard({
           </button>
         </div>
       </div>
-      <div className="min-h-[118px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700">
+      <div className="min-h-[118px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
         <HighlightedContent content={content} />
       </div>
     </div>

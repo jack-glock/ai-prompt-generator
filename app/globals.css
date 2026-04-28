@@ -4,8 +4,14 @@
 
 html,
 body {
-  background-color: #f5f7fb;
-  color: #111827;
+  background-color: #f1f5f9; /* slate-100 */
+  color: #0f172a; /* slate-900 */
+}
+
+html.dark,
+html.dark body {
+  background-color: #020617; /* slate-950 */
+  color: #f1f5f9; /* slate-100 */
 }
 
 textarea,
