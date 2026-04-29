@@ -39,13 +39,16 @@ export async function POST(req: NextRequest) {
   }
 
   // 시스템 프롬프트 — 영어 이미지 생성 프롬프트로 자연스러운 번역.
+  // 디테일 보존이 최우선. 짧게 만들지 말 것.
   const systemPrompt = [
-    "You are a translator that converts Korean memos into clean, natural English",
+    "You are a translator that converts Korean memos into natural English",
     "specifically for AI image generation prompts (game art, illustration).",
     "",
     "Rules:",
     "- Output ONLY the English translation. No explanation, no quotes, no extra text.",
-    "- Keep it concise: descriptive keywords and short phrases preferred over long sentences.",
+    "- PRESERVE ALL visual details from the Korean memo: clothing, colors, props, accessories, pose, action, expression, viewing angle, body orientation, atmosphere, etc.",
+    "- Use descriptive comma-separated phrases suitable for image generation prompts.",
+    "- Do NOT compress or omit details to be brief — every visual element matters.",
     "- Do NOT invent details that are not in the Korean memo.",
     "- Do NOT include any Korean characters in the output.",
     "- Do NOT mention specific brand names, game titles, or real artist names.",
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
         contents: [{ parts: [{ text: systemPrompt }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 500,
+          maxOutputTokens: 1500,
         },
       }),
     });

@@ -98,7 +98,7 @@ import {
 } from "@/lib/options";
 
 import { extractOptions, applyHintsToInput, countAppliedHints } from "@/lib/keywordExtract";
-import { aiTranslateKoreanToEnglish, aiExtractOptions, AiError, AiExtractHints } from "@/lib/aiClient";
+import { aiTranslateKoreanToEnglish, aiExtractOptions, aiAnalyzeImage, AiError, AiExtractHints } from "@/lib/aiClient";
 
 // AI가 응답한 옵션 hints를 PromptInput에 병합한다.
 // - null/undefined인 슬롯은 기존 값을 유지
@@ -218,6 +218,30 @@ export default function HomePage() {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
     } finally {
       setAiExtracting(false);
+      setTimeout(() => setExtractMessage(null), 4000);
+    }
+  };
+
+  // === 핸들러: 참고 이미지 분석 (슬롯별) ===
+  const [analyzingIndex, setAnalyzingIndex] = useState<number | null>(null);
+  const handleAiAnalyzeImage = async (idx: number) => {
+    const ref = input.references[idx];
+    if (!ref?.src) {
+      setExtractMessage("이미지가 없는 슬롯입니다.");
+      setTimeout(() => setExtractMessage(null), 3000);
+      return;
+    }
+    setAnalyzingIndex(idx);
+    setExtractMessage(null);
+    try {
+      const hints = await aiAnalyzeImage(ref.src, ref.role);
+      setInput((p) => mergeAiHints(p, hints));
+      const roleLabel = ref.role;
+      setExtractMessage(`이미지 ${idx + 1} 분석 완료. 해당 역할의 옵션을 채웠습니다.`);
+    } catch (err) {
+      setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
+    } finally {
+      setAnalyzingIndex(null);
       setTimeout(() => setExtractMessage(null), 4000);
     }
   };
@@ -373,40 +397,14 @@ export default function HomePage() {
               />
             </Section>
 
-            <Section
-              title="참고 이미지"
-              hint="이미지를 최대 3장까지 올릴 수 있습니다. 지금은 이미지 자체를 분석하지 않고 역할만 프롬프트에 반영됩니다."
-              collapsible
-              enabled={input.enabled.references}
-              onEnabledChange={(v) => setEnabled("references", v)}
-            >
-              <div className="grid grid-cols-3 gap-2">
-                {input.references.map((ref, i) => (
-                  <ReferenceSlot
-                    key={i}
-                    index={i}
-                    value={ref}
-                    onChange={(patch) => setReference(i, patch)}
-                  />
-                ))}
-              </div>
-              <button
-                type="button"
-                disabled
-                title="향후 OpenAI/Gemini 연결 시 활성화 예정"
-                className="mt-3 w-full cursor-not-allowed rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
-              >
-                AI로 참고 이미지 분석하기 (준비 중)
-              </button>
-            </Section>
-
+            {/* 위 두 입력에서 옵션을 채우는 버튼 그룹 — 영어 보충 바로 아래 */}
             <div className="space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={handleExtract}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-3 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
                   title="단순 키워드 매칭으로 옵션을 자동으로 채웁니다 (API 불필요, 즉시 동작)."
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                 >
                   <Wand2 size={16} /> 키워드로 옵션 채우기
                 </button>
@@ -422,14 +420,40 @@ export default function HomePage() {
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                좌측은 즉시 동작(키워드), 우측은 API 연결 시 활성화됩니다(정확도↑).
+                키워드는 즉시·무료, AI는 정확도↑ (1회 ~3원).
               </p>
               {extractMessage && (
-                <p className="rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                <p className="rounded-xl bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {extractMessage}
                 </p>
               )}
             </div>
+
+            <Section
+              title="참고 이미지"
+              hint="이미지를 최대 3장까지 올릴 수 있습니다. 지금은 이미지 자체를 분석하지 않고 역할만 프롬프트에 반영됩니다."
+              collapsible
+              enabled={input.enabled.references}
+              onEnabledChange={(v) => setEnabled("references", v)}
+            >
+              <div className="grid grid-cols-3 gap-2">
+                {input.references.map((ref, i) => (
+                  <ReferenceSlot
+                    key={i}
+                    index={i}
+                    value={ref}
+                    onChange={(patch) => setReference(i, patch)}
+                    onAnalyze={() => handleAiAnalyzeImage(i)}
+                    analyzing={analyzingIndex === i}
+                  />
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+                각 이미지의 역할을 정한 뒤 슬롯 안 분석 버튼을 누르면 그 역할에 해당하는 옵션만 채워집니다.
+              </p>
+            </Section>
+
+
 
             <Section
               title="작업 유형"
@@ -561,7 +585,7 @@ export default function HomePage() {
             />
             <ModelCard
               title="Midjourney"
-              hint="키워드형 + 비율·제외·참고 파라미터"
+              hint="키워드만 — Discord/사이트에서 --ar, --no, --sref 등 직접 추가"
               options={MJ_OPTIONS}
               selected={mjModel}
               onSelect={setMjModel}
@@ -569,7 +593,7 @@ export default function HomePage() {
             />
             <ModelCard
               title="Niji"
-              hint="애니 키워드형 + Niji 파라미터"
+              hint="애니 키워드만 — Discord/사이트에서 --niji, --ar, --no 등 직접 추가"
               options={NIJI_OPTIONS}
               selected={nijiModel}
               onSelect={setNijiModel}
@@ -862,10 +886,14 @@ function ReferenceSlot({
   index,
   value,
   onChange,
+  onAnalyze,
+  analyzing,
 }: {
   index: number;
   value: ReferenceImageInput;
   onChange: (patch: Partial<ReferenceImageInput>) => void;
+  onAnalyze: () => void;
+  analyzing: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -934,13 +962,25 @@ function ReferenceSlot({
       <select
         value={value.role}
         onChange={(e) => onChange({ role: e.target.value })}
-        title="이미지의 역할"
+        title="이미지의 역할 — 분석은 이 역할의 옵션만 채웁니다."
         className="mt-1.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
       >
         {REFERENCE_ROLE_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
+      {value.src && (
+        <button
+          type="button"
+          onClick={onAnalyze}
+          disabled={analyzing}
+          title={`이 이미지를 '${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? value.role}'로 분석해 해당 옵션만 채웁니다 (1회 약 2~4원).`}
+          className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+        >
+          <Wand2 size={11} className={analyzing ? "animate-spin" : ""} />
+          {analyzing ? "분석 중..." : `${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? "분석"}로 분석`}
+        </button>
+      )}
     </div>
   );
 }

@@ -424,11 +424,7 @@ function buildGptImage(input: PromptInput): string {
     sentences.push("Compose the image with a clear focal point and balanced layout.");
   }
 
-  // 참고 이미지
-  for (const r of refs) {
-    const sentence = REFERENCE_ROLE_SENTENCE[r.role] ?? REFERENCE_ROLE_SENTENCE.style;
-    sentences.push(sentence);
-  }
+  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 ChatGPT/도구에 이미지를 직접 첨부
 
   // 금지 요소
   if (negatives.length > 0) {
@@ -465,13 +461,7 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
   compos.push("clean composition", "clear focal point", "balanced layout");
   lines.push(`Composition: ${compos.join(", ")}.`);
 
-  if (refs.length > 0) {
-    const refStr = refs.map((r) => {
-      const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.en ?? r.role;
-      return `(${label}) reference image`;
-    }).join(", ");
-    lines.push(`Reference: ${refStr}.`);
-  }
+  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 Gemini API/도구에 이미지를 직접 첨부
 
   let quality: string[];
   if (model === "nano_banana_pro") {
@@ -490,13 +480,13 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
   return lines.join("\n");
 }
 
-function buildMidjourney(input: PromptInput, model: ModelKey): string {
+function buildMidjourney(input: PromptInput, _model: ModelKey): string {
+  // 키워드만 출력 — --ar / --no / --sref / --oref / --hd 같은 파라미터는 사용자가
+  // Discord나 MJ 사이트에서 직접 추가합니다 (URL/취향 통제권 사용자에게).
   const workKw = input.enabled.workType ? (WORK_TYPE_KEYWORD[input.workType] ?? "illustration") : "illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
-  const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const refs = activeReferences(input);
 
   const keywords: string[] = [];
   keywords.push(workKw);
@@ -505,31 +495,16 @@ function buildMidjourney(input: PromptInput, model: ModelKey): string {
   if (style) keywords.push(style);
   keywords.push("clean composition", "polished design");
 
-  // 참고 이미지 파라미터
-  const refParams: string[] = [];
-  for (const r of refs) {
-    const p = REFERENCE_ROLE_MJ_PARAM[r.role] ?? REFERENCE_ROLE_MJ_PARAM.style;
-    refParams.push(p);
-  }
-
-  // V8.x 추가 옵션
-  let extra = "";
-  if (model === "mj_v8_alpha") extra = " --hd";
-
-  const base = keywords.join(", ");
-  const arPart = input.enabled.aspectRatio ? ` ${aspectRatioForMidjourney(input)}` : "";
-  const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
-  const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
-  return `${base}${arPart}${noPart}${refPart}${extra}`.replace(/\s+/g, " ").trim();
+  return keywords.join(", ").replace(/\s+/g, " ").trim();
 }
 
-function buildNiji(input: PromptInput, model: ModelKey): string {
+function buildNiji(input: PromptInput, _model: ModelKey): string {
+  // 키워드만 출력 — --niji / --ar / --no / --sref / --cref 같은 파라미터는 사용자가
+  // Discord나 Niji 사이트에서 직접 추가합니다.
   const workKw = input.enabled.workType ? (WORK_TYPE_KEYWORD[input.workType] ?? "illustration") : "illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
-  const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const refs = activeReferences(input);
 
   const keywords: string[] = [];
   keywords.push("anime style");
@@ -539,18 +514,7 @@ function buildNiji(input: PromptInput, model: ModelKey): string {
   if (style) keywords.push(style);
   keywords.push("clean character silhouette", "polished anime game illustration");
 
-  const refParams: string[] = [];
-  for (const r of refs) {
-    const p = REFERENCE_ROLE_NIJI_PARAM[r.role] ?? REFERENCE_ROLE_NIJI_PARAM.style;
-    refParams.push(p);
-  }
-
-  const nijiVersion = model === "niji_6" ? "--niji 6" : "--niji 7";
-  const base = keywords.join(", ");
-  const arPart = input.enabled.aspectRatio ? ` ${aspectRatioForMidjourney(input)}` : "";
-  const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
-  const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
-  return `${base} ${nijiVersion}${arPart}${noPart}${refPart}`.replace(/\s+/g, " ").trim();
+  return keywords.join(", ").replace(/\s+/g, " ").trim();
 }
 
 function buildRevision(input: PromptInput): string {
@@ -788,14 +752,20 @@ export function hasKoreanInOutput(s: string): boolean {
 // 토글해서 비교할 수 있도록 별도 빌더를 둡니다. 영어 빌더와 동일한 enabled 분기
 // 를 따르며, 옵션은 한국어 라벨(`label`)을 사용합니다.
 
-function pushLabel(out: string[], options: OptionItem[], value: string, customText: string) {
-  const label = resolveOptionLabel(options, value, customText);
-  if (label) out.push(label);
+// 한국어 빌더용: 표준 옵션의 한글 라벨만 추가하고, '직접 입력'(custom)의 영어 customText는
+// 한국어 본문에 섞이지 않도록 제외합니다. 디테일은 한글 메모(작가 메모)와 영어 빌더에서 보존.
+function pushLabel(out: string[], options: OptionItem[], value: string, _customText: string) {
+  const item = options.find((o) => o.value === value);
+  if (!item) return;
+  if (item.en === "" || item.en === "__custom__") return; // 자동/직접 입력은 한국어 빌더 본문에 미포함
+  out.push(item.label);
 }
 
-function pushLabelTwo(out: string[], primary: OptionItem[], more: OptionItem[], value: string, customText: string) {
-  const label = resolveOneFromTwo(primary, more, value, customText);
-  if (label) out.push(label);
+function pushLabelTwo(out: string[], primary: OptionItem[], more: OptionItem[], value: string, _customText: string) {
+  const item = primary.find((o) => o.value === value) || more.find((o) => o.value === value);
+  if (!item) return;
+  if (item.en === "" || item.en === "__custom__") return;
+  out.push(item.label);
 }
 
 function collectCharacterTokensKo(c: CharacterInput): string[] {
@@ -895,13 +865,7 @@ export function buildGptImageKorean(input: PromptInput): string {
   }
 
   // 참고 이미지
-  if (en.references) {
-    for (const r of input.references) {
-      if (!r.src) continue;
-      const roleLabel = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? "참고";
-      parts.push(`첨부한 참고 이미지를 "${roleLabel}"로 사용해 주세요.`);
-    }
-  }
+  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 ChatGPT 등에 이미지를 직접 첨부
 
   if (en.negative) {
     const negs = input.negativeChecks
@@ -945,16 +909,7 @@ export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): stri
   compos.push("깔끔한 구도", "명확한 초점", "균형 잡힌 배치");
   lines.push(`구도: ${compos.join(", ")}.`);
 
-  if (en.references) {
-    const refs = input.references.filter((r) => r.src);
-    if (refs.length > 0) {
-      const refStr = refs.map((r) => {
-        const roleLabel = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? "참고";
-        return `(${roleLabel}) 첨부 이미지`;
-      }).join(", ");
-      lines.push(`참고: ${refStr}.`);
-    }
-  }
+  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 Gemini 등에 이미지를 직접 첨부
 
   let quality: string[];
   if (model === "nano_banana_pro") {

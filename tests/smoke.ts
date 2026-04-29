@@ -86,32 +86,21 @@ for (const m of models) {
   });
 }
 
-// 3. Midjourney/Niji 출력에 --ar / --no 포함
-for (const m of ["mj_v7", "mj_v8_alpha", "mj_v8_1_alpha"] as const) {
-  check(`${m} has --ar`, () => {
+// 3. Midjourney/Niji 출력에 dash 파라미터 절대 없어야 (사용자가 Discord에서 직접 추가)
+for (const m of ["mj_v7", "mj_v8_alpha", "mj_v8_1_alpha", "niji_6", "niji_7"] as const) {
+  check(`${m}: --ar 미포함`, () => {
     const out = buildPromptFor(m, baseInput);
-    assert.ok(out.includes("--ar"), `--ar missing in ${m}`);
+    assert.ok(!out.includes("--ar"), `--ar should not be in ${m}: ${out}`);
   });
-  check(`${m} has --no`, () => {
+  check(`${m}: --no 미포함`, () => {
     const out = buildPromptFor(m, baseInput);
-    assert.ok(out.includes("--no"), `--no missing in ${m}`);
+    assert.ok(!out.includes("--no"), `--no should not be in ${m}`);
   });
-}
-for (const m of ["niji_6", "niji_7"] as const) {
-  check(`${m} has --niji + --ar + --no`, () => {
+  check(`${m}: --sref/--oref/--cref/--niji 미포함`, () => {
     const out = buildPromptFor(m, baseInput);
-    assert.ok(out.includes("--niji"), `--niji missing`);
-    assert.ok(out.includes("--ar"), `--ar missing`);
-    assert.ok(out.includes("--no"), `--no missing`);
+    assert.ok(!out.includes("--sref") && !out.includes("--oref") && !out.includes("--cref") && !out.includes("--niji"), `dash param leaked in ${m}: ${out}`);
   });
 }
-
-// 4. 1000x600 → --ar 5:3 변환
-check("1000x600 ratio converts to --ar 5:3 in MJ", () => {
-  const inp: PromptInput = { ...baseInput, aspectRatio: "1000x600" };
-  const out = buildPromptFor("mj_v8_1_alpha", inp);
-  assert.ok(out.includes("--ar 5:3"), `expected --ar 5:3, got: ${out}`);
-});
 
 // 5. 한글 직접 입력은 영어 프롬프트에 안 들어감
 check("Korean styleCustom is filtered out", () => {
@@ -193,8 +182,8 @@ check("no --sref/--oref when no reference uploaded", () => {
   assert.ok(!out.includes("--oref"), "--oref unexpectedly present");
 });
 
-// 11. 참고 이미지 업로드 시 placeholder 파라미터 포함
-check("reference image adds placeholder param", () => {
+// 11. 참고 이미지 업로드해도 MJ/Niji 출력에 placeholder URL이 들어가지 않아야
+check("reference image: no placeholder URL in MJ/Niji output", () => {
   const inp: PromptInput = {
     ...baseInput,
     references: [
@@ -204,9 +193,9 @@ check("reference image adds placeholder param", () => {
     ],
   };
   const mj = buildPromptFor("mj_v8_1_alpha", inp);
-  assert.ok(mj.includes("--oref [character_reference_url]"), `MJ char ref missing: ${mj}`);
+  assert.ok(!mj.includes("[character_reference_url]") && !mj.includes("--oref") && !mj.includes("--sref"), `MJ should not contain ref URL placeholder: ${mj}`);
   const niji = buildPromptFor("niji_7", inp);
-  assert.ok(niji.includes("--cref [character_reference_url]"), `Niji char ref missing`);
+  assert.ok(!niji.includes("[character_reference_url]") && !niji.includes("--cref") && !niji.includes("--sref"), `Niji should not contain ref URL placeholder: ${niji}`);
 });
 
 console.log("");

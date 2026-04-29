@@ -103,3 +103,36 @@ export async function aiExtractOptions(
   }
   return data.hints;
 }
+
+/**
+ * 참고 이미지 1장을 Gemini Vision으로 분석.
+ * 역할에 해당하는 슬롯만 채워 충돌을 막습니다.
+ */
+export async function aiAnalyzeImage(
+  imageDataUrl: string,
+  role: string
+): Promise<AiExtractHints> {
+  if (!imageDataUrl) throw new AiError("이미지가 없습니다.");
+
+  let res: Response;
+  try {
+    res = await fetch("/api/ai/analyze-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageDataUrl, role }),
+    });
+  } catch {
+    throw new AiError("네트워크 오류로 AI에 연결할 수 없습니다.");
+  }
+
+  let data: { hints?: AiExtractHints; error?: string } = {};
+  try { data = await res.json(); } catch { /* ignore */ }
+
+  if (!res.ok) {
+    throw new AiError(data.error ?? `AI 호출 실패 (status ${res.status}).`, res.status);
+  }
+  if (!data.hints) {
+    throw new AiError("AI가 빈 응답을 보냈습니다.");
+  }
+  return data.hints;
+}
