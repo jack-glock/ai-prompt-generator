@@ -1,69 +1,71 @@
 # FEATURES
 
-> 26-04-28 · v0.5 라이브 · ✅ · 🟡 · ⏳ · ❌
+> 26-04-29 · v0.7 라이브 · ✅ · 🟡 · ⏳ · ❌
 
-## 1. 입력 (사이드바 8섹션)
+## 1. 입력 (사이드바)
 
 | 기능 | 비고 |
 |---|---|
-| 1. 작업 유형 5종 | 5칸 그리드 |
-| 2. 스타일 16종 | 3열 그리드. 디즈니/픽사 등 |
-| 3. 비율 5+직접 | 6칸. `1000x600`→`--ar 5:3` |
-| 4. 참고이미지 클릭+드래그앤드롭 | Data URL. 외부 전송 없음 |
-| 4. 참고이미지 역할 5종 | 3열 |
-| 5. 금지 요소 6종 | 체크박스 |
-| 6. 한글 textarea (메모용) | 한글 요약 + GPT/Nano 병기에만 |
-| 7. 영어 textarea | 사용자 직접 번역 |
-| 8. **Niji 전용 7항목** v0.5 | 외형/표정/포즈/의상/배경/화각/매체. 비면 영어 폴백 |
+| 1. 원본 한글 메모 (textarea) | 한국어 토글의 "작가 메모:"에만 들어감. MJ/Niji 미포함. |
+| 2. 영어 보충 입력 (textarea) | 모든 영어 빌더에 그대로 반영. 한국어 빌더에서는 제외. |
+| 3. **AI 번역 버튼** ✅ v0.7 | 한글 메모 → 영어 보충에 자동 채움 (Gemini, ~1원). |
+| 4. **AI 옵션 채우기 버튼** ✅ v0.7 | 한글/영어 입력을 분석해 옵션 슬롯 자동 분배 (Gemini, ~3원). |
+| 5. 키워드로 옵션 채우기 (즉시) | 정해진 키워드 매칭. 무료. |
+| 6. 참고 이미지 1행 3슬롯 ✅ v0.7 | 정사각형 클릭/드롭. dataURL만, 외부 전송 X. |
+| 7. **슬롯별 AI 분석 버튼** ✅ v0.7 | 역할 기반 슬롯 분리로 충돌 방지 (Gemini, ~3원). |
+| 8. 작업 유형 5종 chip | 캐릭터/배경/프레임/아이콘/오브젝트 |
+| 9. 스타일 17종 + 자동/직접입력 | 각 칩 hover 툴팁 desc |
+| 10. 비율 5+직접입력 | `1000x600` → 단순 비율 환산은 코드만 |
+| 11. 빼고 싶은 것 15종 | 체크박스 + 직접 입력 |
+| 12. 작업유형별 옵션 (캐릭터/배경/에셋) | Section으로 통일된 디자인 |
+| 13. **옵션 그룹 사용 토글 8개** ✅ v0.6 | iOS 스위치 (emerald). localStorage 저장. |
+| 14. Section 접기·펼치기 | 헤더 hover 툴팁 |
 
 ## 2. 출력 (6 카드)
 
 | 카드 | 비고 |
 |---|---|
-| 한글 요약 | |
-| GPT Image | 드롭다운 4종 (gpt-image-2 기본) |
-| Nano Banana | 드롭다운 3종. Keep/Change/Remove + Pro/2 가산 |
-| Midjourney | 드롭다운 3종 (V8.1 Alpha 기본). `--ar` + `--oref` |
-| Niji | 드롭다운 2종 (Niji 7 기본). `--niji` + `--cref`. 8번 7항목 우선 |
-| 수정 요청용 | 영문 템플릿 |
+| 정리된 요청 요약 | 2열 표 + 태그 (negative/reference). enabled OFF 그룹 자동 숨김. |
+| GPT Image | 드롭다운 4종 (gpt-image-2 기본). 문장형. **EN/한국어 토글** ✅ v0.7. |
+| Nano Banana | 드롭다운 3종 (nano_banana_2 기본). **자연어 문장형 (Google 권장)** ✅ v0.7. 모델별 capability 차등. **EN/한국어 토글**. |
+| Midjourney | 드롭다운 3종 (V8.1 Alpha 기본). 키워드만 (dash 파라미터 없음, 사용자가 Discord에서 직접 추가). |
+| Niji | 드롭다운 2종 (Niji 7 기본). 애니 키워드만. |
+| 수정 요청용 | Keep/Change/Remove/Do not change 영문 템플릿 |
 
-공통: 사용자 옵션 자리 파란색 하이라이트. 복사/저장 시 토큰 자동 제거. useMemo 실시간.
+공통: 복사 버튼은 본문 박스 우상단 floating. AI 분석 완료 시 버튼 emerald → slate + ✓.
 
 ## 3. 헤더
 
-다크/라이트 토글 v0.5 (Sun/Moon, localStorage) · 초기화 · 저장 (.txt 6개 결과).
+다크/라이트 토글 (Sun/Moon, localStorage) · 초기화.
 
-## 4. 인프라
+## 4. AI 통합 (v0.7)
 
-GitHub 자동 동기화 · Vercel `main` push 자동 배포 60-90초 · DevSync v1.4.7+ · `.devsync/` Git 제외.
+| 항목 | 비고 |
+|---|---|
+| 모델 | Gemini 2.5 Flash |
+| 비용 | 번역 ~1원 / 옵션 추출 ~3원 / 이미지 분석 ~3원 |
+| 키 보안 | 서버 환경변수 `GEMINI_API_KEY` (클라이언트 미노출) |
+| 호출 방식 | Next.js API Route (`/api/ai/translate`, `/extract`, `/analyze-image`) |
+| 자동 실행 | ❌ 모두 사용자 수동 클릭 |
+| 빈 문자열 처리 | `mergeAiHints`에서 옵션 슬롯 빈 문자열 무시 |
+| 시각 피드백 | 분석 완료 시 버튼 색 변경 + ✓ + 입력 변경 시 자동 복귀 |
 
-## 5. 의도적 미구현
+## 5. 인프라
 
-이미지 생성 API ❌ · 자동 번역 API ❌ (비용) · 인증/DB/PSD/MJ 자동 호출 ❌.
+- GitHub 자동 동기화
+- Vercel `main` push 자동 배포 60-90초
+- Vercel 환경변수: `GEMINI_API_KEY` (Production + Preview, Sensitive)
+- DevSync v1.4.7+ · `.devsync/` Git 제외
 
-## 6. v0.6 후보
+## 6. 의도적 미구현
 
-⏳ 즐겨찾기 (P1) · 결과 비교 모드 (P1) · 추천 갤러리 (P2) · 다국어 (P3).
+- ❌ 이미지 생성 API 직접 연동
+- ❌ 사용자 인증 / 서버 DB
+- ❌ MJ/Niji `--sref` 자동 채우기 (외부 호스팅 필요)
+- ❌ 참고 이미지의 GPT/Nano 텍스트 안내 (사용자가 도구에 직접 첨부)
 
-## 7. 외부 의존
+## 7. 검증 / 테스트
 
-Next.js 14.2.5 · React 18.3 · Tailwind 3.4 · TypeScript 5.5 · lucide-react ^0.468. 번역/이미지 API ❌.
-
-## 8. 모델 12종
-
-| 그룹 | 옵션값 | API ID | 비고 |
-|---|---|---|---|
-| GPT | `gpt_image_2` | `gpt-image-2` | 기본. 자유 해상도 |
-| GPT | `gpt_image_1_5` | `gpt-image-1.5` | 마이그레이션 |
-| GPT | `gpt_image_1` | `gpt-image-1` | Legacy |
-| GPT | `gpt_image_1_mini` | `gpt-image-1-mini` | 비용 효율 |
-| Nano | `nano_banana` | `gemini-2.5-flash-image` | |
-| Nano | `nano_banana_2` | `gemini-3.1-flash-image-preview` | 기본 |
-| Nano | `nano_banana_pro` | `gemini-3-pro-image-preview` | 4K + 5인 일관 |
-| MJ | `mj_v7` | V7 | `--oref` |
-| MJ | `mj_v8_alpha` | V8 Alpha | `--hd` |
-| MJ | `mj_v8_1_alpha` | V8.1 Alpha | 기본. HD 기본 |
-| Niji | `niji_6` | V6 | `--niji 6` + `--cref` |
-| Niji | `niji_7` | V7 | 기본. 8번 7항목 우선 |
-
-상세는 `docs/model-specs/`.
+- `npx tsc --noEmit` 통과
+- `npx tsx tests/smoke.ts` — 39+ 케이스 (한글 격리, MJ/Niji dash 미포함 등)
+- `mergeAiHints` 정밀 검증 — 25/25 통과

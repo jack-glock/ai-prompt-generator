@@ -1,22 +1,48 @@
 # NANO_BANANA — Google Nano Banana 빌더 사양
 
 > 인덱스: [`README.md`](./README.md) §1 모델 매트릭스 / §2 통합 적용표.
+> 최종 갱신: 26-04-29 v0.7. 자세한 변경은 [`CHANGELOG.md`](../exec-plans/CHANGELOG.md).
+
+## v0.7 변경 — 자연어 서술 문장형 채택
+
+**이전 v0.2~v0.6의 "Keep/Change/Remove" 또는 "Goal:/Subject:/Style:..." 구조형은 폐기**했습니다.
+
+근거: Google 공식 가이드 (Cloud Blog 26-03 / Developers Blog) — *"Trained to understand narrative natural language, not structured lists. A narrative, descriptive paragraph will almost always produce a better, more coherent image than a simple list of disconnected words."*
+
+현재 빌더 출력 형식 (`lib/promptBuilder.ts` `buildNanoBanana`):
+```
+[Style cap] with [rest of style].
+A [work] featuring [details].
+[English supplement].
+Compose at [aspect] aspect ratio with a clear focal point and balanced layout.
+[모델별 capability — 원본/2/Pro 차등].
+Avoid [negatives].
+```
+
+**스타일을 첫 문장에 단독 배치**해 모델이 가장 강한 신호로 받음.
+
+한국어 토글(`buildNanoBananaKorean`)도 동일한 자연어 문장형으로.
 
 | 다루는 모델 | 옵션값 | 공식 API ID | 비고 |
 |---|---|---|---|
 | Nano Banana | `nano_banana` | `gemini-2.5-flash-image` | 25-08 정식 |
-| Nano Banana 2 | `nano_banana_2` | `gemini-3.1-flash-image-preview` | 26-03 가이드 공개 |
-| Nano Banana Pro | `nano_banana_pro` | `gemini-3-pro-image-preview` | 25-11-20 정식 |
+| Nano Banana 2 | `nano_banana_2` | `gemini-3.1-flash-image-preview` | 26-02-26 공개 (가장 권장) |
+| Nano Banana Pro | `nano_banana_pro` | `gemini-3-pro-image-preview` | 25-11-20 정식. 4K, 다국어 텍스트 |
 
 ---
 
-## 1. 공통 사양 (기본 Nano Banana 기준)
+## 1. 공통 사양
 
 | 항목 | 사양 |
 |---|---|
-| 출력 방식 | **서술형 단락**. Google 공식이 명시적으로 권장 (키워드 나열보다 묘사형 문장이 효과적). 본 프로젝트 v0.2의 **Keep / Change / Remove 3블록**은 자체 컨벤션. |
-| 입력 구조 (자체 컨벤션) | `Keep:` (유지할 것) → `Change:` (적용할 변화) → `Remove:` (제거할 것). 각 블록은 `- ` 불릿. 참고 이미지 있으면 Keep 첫 줄에 `from the reference image: [역할 영문]`. 사용자 한글 요청은 Change 첫 줄에 `apply this concept: "[한글 요청]"`. |
-| 입력 구조 (Google 공식) | 5종 프롬프팅 프레임워크 (필요 시 빌더 옵션으로 추가): ① 텍스트→이미지 `[Subject] + [Action] + [Location/context] + [Composition] + [Style]`, ② 멀티모달 `[Reference images] + [Relationship instruction] + [New scenario]`, ③ 대화형 편집 (변경/유지 명시), ④ 합성/스타일 전이, ⑤ 실시간 정보 (Pro/2). |
+| 출력 방식 | **자연어 서술 문장**. Google 공식 권장. v0.7에서 구조형 → 자연어형으로 전환. |
+| 입력 구조 | Google 공식 5요소를 자연스럽게 결합: Subject + Composition + Action + Setting + Style. |
+| 추천 키워드 | **동사로 시작** (`Create`, `Render`, `Compose`). 카메라/조명/재질 명시 (`85mm portrait lens`, `golden hour rim lighting`). 텍스트는 따옴표로 + 폰트 명시. |
+| 추상 형용사 비권장 | "beautiful", "stunning" 같은 빈 형용사보다 구체적 사진/그림 용어가 효과적. |
+| 금지 / 비권장 | Google은 부정문 대신 긍정문 권장(`"empty street"` (O) vs `"no cars"` (X)). 본 빌더는 `Avoid X, Y, Z` 단문 한 줄로 처리. SynthID 워터마크 자동 (제거 불가). |
+| 비율 처리 | 텍스트로만: `Compose at 16:9 aspect ratio`. |
+| 참고 이미지 | 멀티 이미지 입력으로 캐릭터 일관성 / 다중 합성 (최대 3장 권장). v0.7부터 빌더 출력에는 텍스트 안내 **없음** — 사용자가 도구에 이미지 직접 첨부. |
+| 파라미터 | 빌더 출력에는 **없음**. API 단계만 처리. |
 | 추천 키워드 | **동사로 시작** (`Generate`, `Create`, `Render`, `Compose`). 카메라/조명/재질 명시. 텍스트는 **따옴표로** + 폰트 명시 (`bold sans-serif`, `Century Gothic`). |
 | 금지 / 비권장 | **"Use positive framing"** — Google 공식 가이드는 부정문 대신 긍정문 권장: `"empty street"` (O) vs `"no cars"` (X). 본 프로젝트 빌더의 Remove 블록은 약한 신호일 수 있음. SynthID 워터마크 자동 (제거 불가). |
 | 비율 처리 | 텍스트로만: `aspect ratio 16:9`. |
