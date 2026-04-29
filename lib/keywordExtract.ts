@@ -22,8 +22,21 @@ interface ExtractedHints {
   negativeAdds: string[];
 }
 
-// 키워드 → 옵션 매핑 (한국어 + 일부 영어)
+// 키워드 → 옵션 매핑 (한국어 + 영어)
 type Rule = { tokens: string[]; apply: (h: ExtractedHints) => void };
+
+// 영어 토큰은 단어 경계로 매칭해서 "female" 안에 "male"이 매칭되는 식의 버그를 막습니다.
+// 한국어 토큰 또는 공백을 포함한 구는 단순 substring 매칭을 사용합니다.
+const HAS_HANGUL = /[ㄱ-힝]/;
+function tokenMatches(textLower: string, token: string): boolean {
+  const t = token.toLowerCase();
+  if (HAS_HANGUL.test(t)) return textLower.includes(t);
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const prefix = /^[a-z0-9]/.test(t) ? "\\b" : "";
+  const suffix = /[a-z0-9]$/.test(t) ? "\\b" : "";
+  const re = new RegExp(`${prefix}${escaped}${suffix}`, "i");
+  return re.test(textLower);
+}
 
 const RULES: Rule[] = [
   // 작업 유형
@@ -33,10 +46,11 @@ const RULES: Rule[] = [
   { tokens: ["아이콘", "icon"], apply: (h) => (h.workType = "icon") },
   { tokens: ["오브젝트", "소품", "object", "prop"], apply: (h) => (h.workType = "object") },
 
-  // 스타일
-  { tokens: ["판타지"], apply: (h) => (h.style = "premium_fantasy") },
-  { tokens: ["고급"], apply: (h) => (h.style = "premium_fantasy") },
-  { tokens: ["프리미엄", "premium"], apply: (h) => (h.style = "premium_gold") },
+  // 스타일 (premium 단독은 모호 — "premium fantasy" / "premium gold"는 명시적으로 분리)
+  { tokens: ["프리미엄 골드", "premium gold", "luxury gold", "black gold"], apply: (h) => (h.style = "premium_gold") },
+  { tokens: ["고급 판타지", "premium fantasy", "fantasy art"], apply: (h) => (h.style = "premium_fantasy") },
+  { tokens: ["판타지", "fantasy"], apply: (h) => (h.style = "premium_fantasy") },
+  { tokens: ["프리미엄"], apply: (h) => (h.style = "premium_fantasy") },
   { tokens: ["네온", "neon"], apply: (h) => (h.style = "neon") },
   { tokens: ["픽셀", "pixel"], apply: (h) => (h.style = "pixel_art") },
   { tokens: ["레트로", "retro"], apply: (h) => (h.style = "retro") },
@@ -87,38 +101,38 @@ const RULES: Rule[] = [
   { tokens: ["보라 머리", "purple hair"], apply: (h) => (h.character.hair = "purple") },
   { tokens: ["곱슬"], apply: (h) => (h.character.hair = "curly") },
 
-  // 캐릭터 - 의상
-  { tokens: ["갑옷", "armor"], apply: (h) => (h.character.outfit = "armor") },
-  { tokens: ["드레스", "dress"], apply: (h) => (h.character.outfit = "dress") },
-  { tokens: ["로브", "robe"], apply: (h) => (h.character.outfit = "wizard_robe") },
-  { tokens: ["정장", "suit"], apply: (h) => (h.character.outfit = "suit") },
-  { tokens: ["캐주얼 의상"], apply: (h) => (h.character.outfit = "casual") },
-  { tokens: ["판타지 의상"], apply: (h) => (h.character.outfit = "fantasy") },
-  { tokens: ["모험가"], apply: (h) => (h.character.outfit = "adventurer") },
-  { tokens: ["왕족", "royal"], apply: (h) => (h.character.outfit = "royal") },
-  { tokens: ["전통 의상", "한복"], apply: (h) => (h.character.outfit = "traditional") },
-  { tokens: ["미래", "futuristic"], apply: (h) => (h.character.outfit = "futuristic") },
-  { tokens: ["스포츠 의상"], apply: (h) => (h.character.outfit = "sportswear") },
-  { tokens: ["교복"], apply: (h) => (h.character.outfit = "school_uniform") },
-  { tokens: ["가죽 의상"], apply: (h) => (h.character.outfit = "leather") },
+  // 캐릭터 - 의상 (직업·종족 단어가 들어오면 가까운 의상으로 매핑)
+  { tokens: ["갑옷", "armor", "warrior", "knight", "soldier", "paladin"], apply: (h) => (h.character.outfit = "armor") },
+  { tokens: ["드레스", "dress", "gown"], apply: (h) => (h.character.outfit = "dress") },
+  { tokens: ["로브", "robe", "wizard", "mage", "witch", "sorcerer", "sorceress"], apply: (h) => (h.character.outfit = "wizard_robe") },
+  { tokens: ["정장", "suit", "tuxedo"], apply: (h) => (h.character.outfit = "suit") },
+  { tokens: ["캐주얼 의상", "casual outfit", "casual clothes"], apply: (h) => (h.character.outfit = "casual") },
+  { tokens: ["판타지 의상", "fantasy outfit"], apply: (h) => (h.character.outfit = "fantasy") },
+  { tokens: ["모험가", "adventurer", "archer", "hunter", "ranger", "rogue"], apply: (h) => (h.character.outfit = "adventurer") },
+  { tokens: ["왕족", "royal", "princess", "prince", "queen", "king", "noble"], apply: (h) => (h.character.outfit = "royal") },
+  { tokens: ["전통 의상", "한복", "traditional", "samurai", "ninja", "kimono", "hanbok"], apply: (h) => (h.character.outfit = "traditional") },
+  { tokens: ["미래", "futuristic", "sci-fi", "cyberpunk", "cyborg"], apply: (h) => (h.character.outfit = "futuristic") },
+  { tokens: ["스포츠 의상", "sportswear", "athletic wear"], apply: (h) => (h.character.outfit = "sportswear") },
+  { tokens: ["교복", "school uniform"], apply: (h) => (h.character.outfit = "school_uniform") },
+  { tokens: ["가죽 의상", "leather"], apply: (h) => (h.character.outfit = "leather") },
 
   // 캐릭터 - 포즈
-  { tokens: ["정면으로 서"], apply: (h) => (h.character.pose = "standing_front") },
-  { tokens: ["서 있"], apply: (h) => (h.character.pose = "standing_front") },
-  { tokens: ["앉아", "sitting"], apply: (h) => (h.character.pose = "sitting") },
+  { tokens: ["정면으로 서", "standing facing"], apply: (h) => (h.character.pose = "standing_front") },
+  { tokens: ["서 있", "standing"], apply: (h) => (h.character.pose = "standing_front") },
+  { tokens: ["앉아", "sitting", "seated"], apply: (h) => (h.character.pose = "sitting") },
   { tokens: ["걷는", "walking"], apply: (h) => (h.character.pose = "walking") },
-  { tokens: ["달리", "running"], apply: (h) => (h.character.pose = "running") },
-  { tokens: ["액션 포즈", "action pose"], apply: (h) => (h.character.pose = "action") },
-  { tokens: ["점프", "jump"], apply: (h) => (h.character.pose = "jumping") },
-  { tokens: ["팔짱"], apply: (h) => (h.character.pose = "arms_crossed") },
-  { tokens: ["무기를 들"], apply: (h) => (h.character.pose = "holding_weapon") },
-  { tokens: ["마법을"], apply: (h) => (h.character.pose = "casting_magic") },
+  { tokens: ["달리", "running", "sprinting"], apply: (h) => (h.character.pose = "running") },
+  { tokens: ["액션 포즈", "action pose", "dynamic pose"], apply: (h) => (h.character.pose = "action") },
+  { tokens: ["점프", "jump", "jumping", "leap"], apply: (h) => (h.character.pose = "jumping") },
+  { tokens: ["팔짱", "arms crossed"], apply: (h) => (h.character.pose = "arms_crossed") },
+  { tokens: ["무기를 들", "holding a weapon", "wielding"], apply: (h) => (h.character.pose = "holding_weapon") },
+  { tokens: ["마법을", "casting magic", "casting spell"], apply: (h) => (h.character.pose = "casting_magic") },
 
   // 캐릭터 - 보이는 범위
-  { tokens: ["전신", "full body"], apply: (h) => (h.character.visibleRange = "full_body") },
+  { tokens: ["전신", "full body", "full-body"], apply: (h) => (h.character.visibleRange = "full_body") },
   { tokens: ["반신", "half body"], apply: (h) => (h.character.visibleRange = "half_body") },
   { tokens: ["상반신", "upper body"], apply: (h) => (h.character.visibleRange = "upper_body") },
-  { tokens: ["얼굴 클로즈업", "close-up"], apply: (h) => (h.character.visibleRange = "face_close") },
+  { tokens: ["얼굴 클로즈업", "close-up", "closeup", "portrait", "headshot"], apply: (h) => (h.character.visibleRange = "face_close") },
 
   // 캐릭터 - 보는 각도
   { tokens: ["눈높이"], apply: (h) => (h.character.viewingAngle = "eye_level") },
@@ -150,6 +164,12 @@ const RULES: Rule[] = [
   { tokens: ["우주", "space"], apply: (h) => (h.background.place = "space") },
   { tokens: ["카페", "cafe"], apply: (h) => (h.background.place = "cafe") },
   { tokens: ["폐허", "ruins"], apply: (h) => (h.background.place = "ruins") },
+  { tokens: ["산", "mountain", "mountains"], apply: (h) => (h.background.place = "snowy_mountain") },
+  { tokens: ["정원", "garden"], apply: (h) => (h.background.place = "garden") },
+  { tokens: ["호수", "lake"], apply: (h) => (h.background.place = "lake") },
+  { tokens: ["강", "river", "riverside"], apply: (h) => (h.background.place = "riverside") },
+  { tokens: ["하늘섬", "floating island", "sky island"], apply: (h) => (h.background.place = "sky_island") },
+  { tokens: ["왕궁", "palace"], apply: (h) => (h.background.place = "palace") },
 
   // 배경 - 시간대
   { tokens: ["아침", "morning"], apply: (h) => (h.background.timeOfDay = "morning") },
@@ -163,23 +183,24 @@ const RULES: Rule[] = [
   { tokens: ["안개", "foggy"], apply: (h) => (h.background.timeOfDay = "foggy") },
 
   // 배경 - 분위기
-  { tokens: ["고급스러운", "luxurious"], apply: (h) => (h.background.mood = "luxurious") },
-  { tokens: ["귀여운", "cute"], apply: (h) => (h.background.mood = "cute") },
-  { tokens: ["신비로운", "mystical"], apply: (h) => (h.background.mood = "mystical") },
+  { tokens: ["고급스러운", "luxurious", "lavish", "opulent"], apply: (h) => (h.background.mood = "luxurious") },
+  { tokens: ["귀여운", "cute", "adorable"], apply: (h) => (h.background.mood = "cute") },
+  { tokens: ["신비로운", "mystical", "mysterious", "enchanted"], apply: (h) => (h.background.mood = "mystical") },
   { tokens: ["따뜻한", "warm"], apply: (h) => (h.background.mood = "warm") },
-  { tokens: ["차가운", "cold"], apply: (h) => (h.background.mood = "cold") },
-  { tokens: ["어두운", "dark"], apply: (h) => (h.background.mood = "dark") },
-  { tokens: ["웅장한", "grand"], apply: (h) => (h.background.mood = "grand") },
-  { tokens: ["평화로운", "peaceful"], apply: (h) => (h.background.mood = "peaceful") },
-  { tokens: ["모험적", "adventur"], apply: (h) => (h.background.mood = "adventurous") },
-  { tokens: ["긴장감", "tense"], apply: (h) => (h.background.mood = "tense") },
+  { tokens: ["차가운", "cold", "chilly"], apply: (h) => (h.background.mood = "cold") },
+  { tokens: ["어두운", "dark", "gloomy"], apply: (h) => (h.background.mood = "dark") },
+  { tokens: ["웅장한", "grand", "epic", "majestic", "mighty", "monumental"], apply: (h) => (h.background.mood = "grand") },
+  { tokens: ["평화로운", "peaceful", "serene", "calm"], apply: (h) => (h.background.mood = "peaceful") },
+  { tokens: ["모험적", "adventur", "heroic"], apply: (h) => (h.background.mood = "adventurous") },
+  { tokens: ["긴장감", "tense", "intense"], apply: (h) => (h.background.mood = "tense") },
 
   // 배경 - 빛
-  { tokens: ["노을빛", "노을"], apply: (h) => (h.background.lighting = "sunset") },
-  { tokens: ["달빛", "moonlight"], apply: (h) => (h.background.lighting = "moon") },
-  { tokens: ["네온 느낌"], apply: (h) => (h.background.lighting = "neon") },
-  { tokens: ["극적인 조명", "dramatic"], apply: (h) => (h.background.lighting = "dramatic") },
-  { tokens: ["마법 glow", "magical glow"], apply: (h) => (h.background.lighting = "magic_glow") },
+  { tokens: ["노을빛", "노을", "sunset light", "golden hour"], apply: (h) => (h.background.lighting = "sunset") },
+  { tokens: ["달빛", "moonlight", "moonlit"], apply: (h) => (h.background.lighting = "moon") },
+  { tokens: ["네온 느낌", "neon lighting"], apply: (h) => (h.background.lighting = "neon") },
+  { tokens: ["극적인 조명", "dramatic", "cinematic lighting"], apply: (h) => (h.background.lighting = "dramatic") },
+  { tokens: ["마법 glow", "magical glow", "glowing", "magical light"], apply: (h) => (h.background.lighting = "magic_glow") },
+  { tokens: ["뒤에서 빛", "backlight", "rim light"], apply: (h) => (h.background.lighting = "back") },
 
   // 배경 - 색감
   { tokens: ["파스텔"], apply: (h) => (h.background.colorPalette = "pastel") },
@@ -225,7 +246,7 @@ export function extractOptions(koreanMemo: string, englishSupplement: string): E
   const text = `${koreanMemo}\n${englishSupplement}`.toLowerCase();
   const hints = makeEmptyHints();
   for (const rule of RULES) {
-    const matched = rule.tokens.some((t) => text.includes(t.toLowerCase()));
+    const matched = rule.tokens.some((t) => tokenMatches(text, t));
     if (matched) rule.apply(hints);
   }
   return hints;

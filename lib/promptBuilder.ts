@@ -126,6 +126,29 @@ export interface ReferenceImageInput {
   role: string; // REFERENCE_ROLE_OPTIONS의 value
 }
 
+/** 옵션 그룹별 사용/비사용 플래그. 끄면 해당 그룹은 영어 프롬프트에 반영되지 않습니다. */
+export interface EnabledFlags {
+  workType: boolean;
+  style: boolean;
+  aspectRatio: boolean;
+  negative: boolean;
+  references: boolean;
+  character: boolean;
+  background: boolean;
+  asset: boolean;
+}
+
+export const DEFAULT_ENABLED: EnabledFlags = {
+  workType: true,
+  style: true,
+  aspectRatio: true,
+  negative: true,
+  references: true,
+  character: true,
+  background: true,
+  asset: true,
+};
+
 export interface PromptInput {
   workType: WorkType;
   koreanMemo: string;
@@ -140,6 +163,7 @@ export interface PromptInput {
   background: BackgroundInput;
   asset: AssetInput;
   references: ReferenceImageInput[]; // 길이 3 고정
+  enabled: EnabledFlags;
 }
 
 export const EMPTY_CHARACTER: CharacterInput = {
@@ -197,6 +221,7 @@ export const DEFAULT_INPUT: PromptInput = {
   background: EMPTY_BACKGROUND,
   asset: EMPTY_ASSET,
   references: EMPTY_REFERENCES,
+  enabled: DEFAULT_ENABLED,
 };
 
 // ===== 비율 처리 =====
@@ -263,6 +288,7 @@ function pushFromTwoLists(
 }
 
 function collectStyle(input: PromptInput): string {
+  if (!input.enabled.style) return "";
   return resolveOptionEn(STYLE_OPTIONS, input.style, input.styleCustom);
 }
 
@@ -322,6 +348,7 @@ function collectAssetTokens(a: AssetInput, workType: WorkType): string[] {
 }
 
 function collectNegatives(input: PromptInput): string[] {
+  if (!input.enabled.negative) return [];
   const out: string[] = [];
   for (const v of input.negativeChecks) {
     const item = NEGATIVE_OPTIONS.find((o) => o.value === v);
@@ -333,19 +360,21 @@ function collectNegatives(input: PromptInput): string[] {
 }
 
 function collectMainTokens(input: PromptInput): string[] {
+  const en = input.enabled;
   switch (input.workType) {
     case "character":
-      return collectCharacterTokens(input.character);
+      return en.character ? collectCharacterTokens(input.character) : [];
     case "background":
-      return collectBackgroundTokens(input.background);
+      return en.background ? collectBackgroundTokens(input.background) : [];
     case "frame":
     case "icon":
     case "object":
-      return collectAssetTokens(input.asset, input.workType);
+      return en.asset ? collectAssetTokens(input.asset, input.workType) : [];
   }
 }
 
 function activeReferences(input: PromptInput): ReferenceImageInput[] {
+  if (!input.enabled.references) return [];
   return input.references.filter((r) => r.src);
 }
 
@@ -361,13 +390,13 @@ function englishSupplementClean(input: PromptInput): string {
 // ===== 모델별 빌더 =====
 
 function buildGptImage(input: PromptInput): string {
-  const work = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en
-    ?? "an illustration";
+  const work = input.enabled.workType
+    ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en ?? "an illustration")
+    : "an illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
   const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const ratio = aspectRatioForGpt(input);
   const refs = activeReferences(input);
 
   const sentences: string[] = [];
@@ -389,7 +418,11 @@ function buildGptImage(input: PromptInput): string {
   }
 
   // 비율
-  sentences.push(`Compose the image at ${ratio} with a clear focal point and balanced layout.`);
+  if (input.enabled.aspectRatio) {
+    sentences.push(`Compose the image at ${aspectRatioForGpt(input)} with a clear focal point and balanced layout.`);
+  } else {
+    sentences.push("Compose the image with a clear focal point and balanced layout.");
+  }
 
   // 참고 이미지
   for (const r of refs) {
@@ -407,87 +440,62 @@ function buildGptImage(input: PromptInput): string {
 }
 
 function buildNanoBanana(input: PromptInput, model: ModelKey): string {
-  const work = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en
-    ?? "an illustration";
+  const work = input.enabled.workType
+    ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en ?? "an illustration")
+    : "an illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
   const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const ratio = resolveAspectRatio(input);
   const refs = activeReferences(input);
 
+  // 각 섹션을 한 줄씩으로 압축 (구조 유지, 항목은 콤마 결합).
   const lines: string[] = [];
 
-  // Goal
-  lines.push("Goal:");
-  lines.push(`- Create ${work}.`);
+  lines.push(`Goal: Create ${work}.`);
 
-  // Subject (main details + 영어 보충)
-  lines.push("");
-  lines.push("Subject:");
-  if (main.length > 0) {
-    for (const t of main) lines.push(`- ${t}`);
-  } else {
-    lines.push("- (subject not specified, infer from artist direction)");
-  }
-  if (eng) lines.push(`- ${eng}`);
+  const subj = [...main];
+  if (eng) subj.push(eng);
+  if (subj.length > 0) lines.push(`Subject: ${subj.join(", ")}.`);
 
-  // Style
-  if (style) {
-    lines.push("");
-    lines.push("Style:");
-    lines.push(`- ${style}`);
-  }
+  if (style) lines.push(`Style: ${style}.`);
 
-  // Composition
-  lines.push("");
-  lines.push("Composition:");
-  lines.push(`- aspect ratio ${ratio}`);
-  lines.push("- clean composition, clear focal point, balanced layout");
+  const compos: string[] = [];
+  if (input.enabled.aspectRatio) compos.push(`aspect ratio ${resolveAspectRatio(input)}`);
+  compos.push("clean composition", "clear focal point", "balanced layout");
+  lines.push(`Composition: ${compos.join(", ")}.`);
 
-  // Reference
   if (refs.length > 0) {
-    lines.push("");
-    lines.push("Reference:");
-    for (const r of refs) {
+    const refStr = refs.map((r) => {
       const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.en ?? r.role;
-      const sentence = REFERENCE_ROLE_SENTENCE[r.role] ?? "";
-      lines.push(`- (${label}) ${sentence.replace(/^Use the attached reference image /, "")}`);
-    }
+      return `(${label}) reference image`;
+    }).join(", ");
+    lines.push(`Reference: ${refStr}.`);
   }
 
-  // Quality
-  lines.push("");
-  lines.push("Quality:");
+  let quality: string[];
   if (model === "nano_banana_pro") {
-    lines.push("- target resolution: 4K, professional print-ready");
-    lines.push("- multilingual text rendering enabled");
+    quality = ["4K, professional print-ready", "multilingual text rendering"];
   } else if (model === "nano_banana_2") {
-    lines.push("- target resolution: 2K or higher");
-    lines.push("- precise aspect ratio");
+    quality = ["2K or higher", "precise aspect ratio"];
   } else {
-    lines.push("- commercial game asset quality, clean readable design");
+    quality = ["commercial game asset quality", "clean readable design"];
   }
+  lines.push(`Quality: ${quality.join(", ")}.`);
 
-  // Avoid
-  lines.push("");
-  lines.push("Avoid:");
   if (negatives.length > 0) {
-    for (const n of negatives) lines.push(`- ${n}`);
-  } else {
-    lines.push("- anything that distracts from the main subject");
+    lines.push(`Avoid: ${negatives.join(", ")}.`);
   }
 
   return lines.join("\n");
 }
 
 function buildMidjourney(input: PromptInput, model: ModelKey): string {
-  const workKw = WORK_TYPE_KEYWORD[input.workType] ?? "illustration";
+  const workKw = input.enabled.workType ? (WORK_TYPE_KEYWORD[input.workType] ?? "illustration") : "illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
   const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const ar = aspectRatioForMidjourney(input);
   const refs = activeReferences(input);
 
   const keywords: string[] = [];
@@ -509,18 +517,18 @@ function buildMidjourney(input: PromptInput, model: ModelKey): string {
   if (model === "mj_v8_alpha") extra = " --hd";
 
   const base = keywords.join(", ");
+  const arPart = input.enabled.aspectRatio ? ` ${aspectRatioForMidjourney(input)}` : "";
   const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
   const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
-  return `${base} ${ar}${noPart}${refPart}${extra}`.replace(/\s+/g, " ").trim();
+  return `${base}${arPart}${noPart}${refPart}${extra}`.replace(/\s+/g, " ").trim();
 }
 
 function buildNiji(input: PromptInput, model: ModelKey): string {
-  const workKw = WORK_TYPE_KEYWORD[input.workType] ?? "illustration";
+  const workKw = input.enabled.workType ? (WORK_TYPE_KEYWORD[input.workType] ?? "illustration") : "illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
   const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const ar = aspectRatioForMidjourney(input);
   const refs = activeReferences(input);
 
   const keywords: string[] = [];
@@ -539,9 +547,10 @@ function buildNiji(input: PromptInput, model: ModelKey): string {
 
   const nijiVersion = model === "niji_6" ? "--niji 6" : "--niji 7";
   const base = keywords.join(", ");
+  const arPart = input.enabled.aspectRatio ? ` ${aspectRatioForMidjourney(input)}` : "";
   const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
   const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
-  return `${base} ${nijiVersion} ${ar}${noPart}${refPart}`.replace(/\s+/g, " ").trim();
+  return `${base} ${nijiVersion}${arPart}${noPart}${refPart}`.replace(/\s+/g, " ").trim();
 }
 
 function buildRevision(input: PromptInput): string {
@@ -759,4 +768,203 @@ export function buildRevisionPrompt(input: PromptInput): string {
 
 export function hasKoreanInOutput(s: string): boolean {
   return containsKorean(s);
+}
+
+// ===== GPT Image 한국어 버전 =====
+// GPT Image / Nano Banana는 한국어 프롬프트도 잘 처리하므로, 사용자가 한/영을
+// 토글해서 비교할 수 있도록 별도 빌더를 둡니다. 영어 빌더와 동일한 enabled 분기
+// 를 따르며, 옵션은 한국어 라벨(`label`)을 사용합니다.
+
+function pushLabel(out: string[], options: OptionItem[], value: string, customText: string) {
+  const label = resolveOptionLabel(options, value, customText);
+  if (label) out.push(label);
+}
+
+function pushLabelTwo(out: string[], primary: OptionItem[], more: OptionItem[], value: string, customText: string) {
+  const label = resolveOneFromTwo(primary, more, value, customText);
+  if (label) out.push(label);
+}
+
+function collectCharacterTokensKo(c: CharacterInput): string[] {
+  const out: string[] = [];
+  pushLabel(out, GENDER_OPTIONS, c.gender, c.genderCustom);
+  pushLabel(out, AGE_OPTIONS, c.ageRange, c.ageRangeCustom);
+  pushLabel(out, BODY_OPTIONS, c.bodyType, c.bodyTypeCustom);
+  pushLabelTwo(out, HAIR_OPTIONS, HAIR_MORE_OPTIONS, c.hair, c.hairCustom);
+  pushLabelTwo(out, OUTFIT_OPTIONS, OUTFIT_MORE_OPTIONS, c.outfit, c.outfitCustom);
+  pushLabelTwo(out, POSE_OPTIONS, POSE_MORE_OPTIONS, c.pose, c.poseCustom);
+  pushLabelTwo(out, VISIBLE_RANGE_OPTIONS, VISIBLE_RANGE_MORE_OPTIONS, c.visibleRange, c.visibleRangeCustom);
+  pushLabelTwo(out, VIEW_ANGLE_OPTIONS, VIEW_ANGLE_MORE_OPTIONS, c.viewingAngle, c.viewingAngleCustom);
+  pushLabelTwo(out, CHARACTER_DIRECTION_OPTIONS, CHARACTER_DIRECTION_MORE_OPTIONS, c.characterDirection, c.characterDirectionCustom);
+  pushLabelTwo(out, CHARACTER_SHEET_OPTIONS, CHARACTER_SHEET_MORE_OPTIONS, c.characterSheet, c.characterSheetCustom);
+  return out;
+}
+
+function collectBackgroundTokensKo(b: BackgroundInput): string[] {
+  const out: string[] = [];
+  pushLabelTwo(out, PLACE_OPTIONS, PLACE_MORE_OPTIONS, b.place, b.placeCustom);
+  pushLabel(out, TIME_OF_DAY_OPTIONS, b.timeOfDay, b.timeOfDayCustom);
+  pushLabel(out, MOOD_OPTIONS, b.mood, b.moodCustom);
+  pushLabel(out, LIGHTING_OPTIONS, b.lighting, b.lightingCustom);
+  pushLabel(out, COLOR_PALETTE_OPTIONS, b.colorPalette, b.colorPaletteCustom);
+  pushLabel(out, DEPTH_OPTIONS, b.depth, b.depthCustom);
+  pushLabel(out, COMPLEXITY_OPTIONS, b.complexity, b.complexityCustom);
+  pushLabel(out, LAYOUT_OPTIONS, b.layout, b.layoutCustom);
+  pushLabel(out, BG_VIEW_ANGLE_OPTIONS, b.viewingAngle, b.viewingAngleCustom);
+  pushLabel(out, BG_VISIBLE_RANGE_OPTIONS, b.visibleRange, b.visibleRangeCustom);
+  return out;
+}
+
+function collectAssetTokensKo(a: AssetInput): string[] {
+  const out: string[] = [];
+  pushLabel(out, SHAPE_OPTIONS, a.shape, a.shapeCustom);
+  pushLabel(out, SURFACE_OPTIONS, a.surface, a.surfaceCustom);
+  pushLabel(out, DIMENSION_OPTIONS, a.dimension, a.dimensionCustom);
+  pushLabel(out, DECORATION_LEVEL_OPTIONS, a.decorationLevel, a.decorationLevelCustom);
+  pushLabel(out, BG_TREATMENT_OPTIONS, a.backgroundTreatment, a.backgroundTreatmentCustom);
+  for (const r of a.rules) {
+    const item = ASSET_RULES_OPTIONS.find((o) => o.value === r);
+    if (item) out.push(item.label);
+  }
+  return out;
+}
+
+function collectMainTokensKo(input: PromptInput): string[] {
+  const en = input.enabled;
+  switch (input.workType) {
+    case "character":
+      return en.character ? collectCharacterTokensKo(input.character) : [];
+    case "background":
+      return en.background ? collectBackgroundTokensKo(input.background) : [];
+    case "frame":
+    case "icon":
+    case "object":
+      return en.asset ? collectAssetTokensKo(input.asset) : [];
+  }
+}
+
+export function buildGptImageKorean(input: PromptInput): string {
+  const en = input.enabled;
+  const parts: string[] = [];
+
+  // 작업 유형
+  const workLabel = en.workType
+    ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.label ?? "이미지")
+    : "이미지";
+  parts.push(`${workLabel}를 만들어 주세요.`);
+
+  // 주요 묘사
+  const main = collectMainTokensKo(input);
+  if (main.length > 0) {
+    parts.push(`주요 디테일: ${main.join(", ")}.`);
+  }
+
+  // 한글 메모 — 영어 빌더와 달리 한국어 프롬프트에는 그대로 넣어 줍니다.
+  const memo = (input.koreanMemo ?? "").trim();
+  if (memo) {
+    parts.push(`작가 메모: ${memo}.`);
+  }
+
+  // 영어 보충 입력 — 영어로 적혀 있어도 그대로 포함 (GPT가 처리 가능)
+  const eng = (input.englishSupplement ?? "").trim();
+  if (eng) {
+    parts.push(`추가 지시: ${eng}.`);
+  }
+
+  // 스타일
+  if (en.style) {
+    const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
+    if (styleLabel) parts.push(`스타일: ${styleLabel}.`);
+  }
+
+  // 비율
+  if (en.aspectRatio) {
+    parts.push(`비율은 ${resolveAspectRatio(input)}로, 명확한 초점과 균형 잡힌 구도로 만들어 주세요.`);
+  } else {
+    parts.push("명확한 초점과 균형 잡힌 구도로 만들어 주세요.");
+  }
+
+  // 참고 이미지
+  if (en.references) {
+    for (const r of input.references) {
+      if (!r.src) continue;
+      const roleLabel = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? "참고";
+      parts.push(`첨부한 참고 이미지를 "${roleLabel}"로 사용해 주세요.`);
+    }
+  }
+
+  if (en.negative) {
+    const negs = input.negativeChecks
+      .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
+      .filter((x): x is string => !!x);
+    const customNeg = (input.negativeCustom ?? "").trim();
+    if (customNeg) negs.push(customNeg);
+    if (negs.length > 0) {
+      parts.push(`다음 요소는 빼주세요: ${negs.join(", ")}.`);
+    }
+  }
+
+  parts.push("게임 아트로 바로 쓸 수 있도록 깨끗한 가장자리와 일관된 조명으로 마감해 주세요.");
+  return parts.join(" ");
+}
+
+// ===== Nano Banana 한국어 버전 =====
+// 영어 버전과 동일하게 각 섹션을 한 줄씩으로 압축한다 (구조 유지 + 콤마 결합).
+export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): string {
+  const en = input.enabled;
+  const lines: string[] = [];
+
+  const workLabel = en.workType
+    ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.label ?? "이미지")
+    : "이미지";
+  lines.push(`목표: ${workLabel}를 만든다.`);
+
+  const subj = collectMainTokensKo(input);
+  const memo = (input.koreanMemo ?? "").trim();
+  if (memo) subj.push(`작가 메모: ${memo}`);
+  const engSup = (input.englishSupplement ?? "").trim();
+  if (engSup) subj.push(engSup);
+  if (subj.length > 0) lines.push(`주요 디테일: ${subj.join(", ")}.`);
+
+  if (en.style) {
+    const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
+    if (styleLabel) lines.push(`스타일: ${styleLabel}.`);
+  }
+
+  const compos: string[] = [];
+  if (en.aspectRatio) compos.push(`비율 ${resolveAspectRatio(input)}`);
+  compos.push("깔끔한 구도", "명확한 초점", "균형 잡힌 배치");
+  lines.push(`구도: ${compos.join(", ")}.`);
+
+  if (en.references) {
+    const refs = input.references.filter((r) => r.src);
+    if (refs.length > 0) {
+      const refStr = refs.map((r) => {
+        const roleLabel = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? "참고";
+        return `(${roleLabel}) 첨부 이미지`;
+      }).join(", ");
+      lines.push(`참고: ${refStr}.`);
+    }
+  }
+
+  let quality: string[];
+  if (model === "nano_banana_pro") {
+    quality = ["4K 인쇄용 고품질", "다국어 텍스트 렌더링"];
+  } else if (model === "nano_banana_2") {
+    quality = ["2K 이상 해상도", "정확한 비율 유지"];
+  } else {
+    quality = ["게임 에셋용 상업 품질", "깔끔하고 알아보기 쉬운 디자인"];
+  }
+  lines.push(`품질: ${quality.join(", ")}.`);
+
+  if (en.negative) {
+    const negs = input.negativeChecks
+      .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
+      .filter((x): x is string => !!x);
+    const customNeg = (input.negativeCustom ?? "").trim();
+    if (customNeg) negs.push(customNeg);
+    if (negs.length > 0) lines.push(`빼주세요: ${negs.join(", ")}.`);
+  }
+
+  return lines.join("\n");
 }

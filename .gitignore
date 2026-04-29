@@ -37,3 +37,8 @@ next-env.d.ts
 
 # 검증용 임시 빈 파일 (워크스페이스 권한 제약으로 OS레벨 삭제 불가)
 tests/style_check.ts
+tests/extract_en.ts
+tests/enabled_check.ts
+tests/ko_check.ts
+tests/nano_ko_check.ts
+tests/nano_compact.ts

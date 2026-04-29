@@ -26,6 +26,7 @@ import {
   Sun,
   Moon,
   Plus,
+  ChevronDown,
 } from "lucide-react";
 
 import {
@@ -43,6 +44,8 @@ import {
   buildPromptFor,
   buildSummary,
   buildRevisionPrompt,
+  buildGptImageKorean,
+  buildNanoBananaKorean,
 } from "@/lib/promptBuilder";
 
 import {
@@ -123,7 +126,9 @@ export default function HomePage() {
 
   const summary = useMemo(() => buildSummary(input), [input]);
   const gptOutput = useMemo(() => buildPromptFor(gptModel, input), [gptModel, input]);
+  const gptOutputKo = useMemo(() => buildGptImageKorean(input), [input]);
   const nanoOutput = useMemo(() => buildPromptFor(nanoModel, input), [nanoModel, input]);
+  const nanoOutputKo = useMemo(() => buildNanoBananaKorean(input, nanoModel), [input, nanoModel]);
   const mjOutput = useMemo(() => buildPromptFor(mjModel, input), [mjModel, input]);
   const nijiOutput = useMemo(() => buildPromptFor(nijiModel, input), [nijiModel, input]);
   const revisionOutput = useMemo(() => buildRevisionPrompt(input), [input]);
@@ -188,6 +193,23 @@ export default function HomePage() {
       references: p.references.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     }));
 
+  const setEnabled = (k: keyof PromptInput["enabled"], v: boolean) =>
+    setInput((p) => ({ ...p, enabled: { ...p.enabled, [k]: v } }));
+
+  // 사용/비사용 플래그를 localStorage에 저장 / 복원
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("apg.enabled");
+      if (raw) {
+        const saved = JSON.parse(raw);
+        setInput((p) => ({ ...p, enabled: { ...p.enabled, ...saved } }));
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("apg.enabled", JSON.stringify(input.enabled)); } catch {}
+  }, [input.enabled]);
+
   return (
     <div className="min-h-screen bg-slate-100 p-4 text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:p-6">
       <div className="mx-auto max-w-7xl">
@@ -240,101 +262,13 @@ export default function HomePage() {
               />
             </Section>
 
-            <div>
-              <button
-                type="button"
-                onClick={handleExtract}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-              >
-                <Wand2 size={18} /> 입력 내용을 옵션으로 정리하기
-              </button>
-              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                위 두 입력에서 키워드를 감지해 아래 옵션을 자동으로 채워 줍니다. 자동 채워진 항목은 직접 다시 수정할 수 있습니다.
-                (1차 구현은 키워드 매칭, 향후 AI 분석으로 확장 예정)
-              </p>
-              {extractMessage && (
-                <p className="mt-2 rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
-                  {extractMessage}
-                </p>
-              )}
-            </div>
-
-            <Section title="작업 유형">
-              <div className="grid grid-cols-5 gap-2">
-                {WORK_TYPE_OPTIONS.map((w) => (
-                  <ChipSm
-                    key={w.value}
-                    label={w.label}
-                    active={input.workType === w.value}
-                    onClick={() => setField("workType", w.value as WorkType)}
-                  />
-                ))}
-              </div>
-            </Section>
-
-            <OptionPicker
-              label="스타일"
-              hint="이미지의 전체적인 그림 스타일입니다."
-              options={STYLE_OPTIONS}
-              value={input.style}
-              customText={input.styleCustom}
-              onChange={(v, c) => setInput((p) => ({ ...p, style: v, styleCustom: c }))}
-            />
-
-            <OptionPicker
-              label="비율"
-              hint="이미지 가로세로 비율입니다."
-              options={ASPECT_RATIO_OPTIONS}
-              value={input.aspectRatio}
-              customText={input.aspectRatioCustom}
-              onChange={(v, c) => setInput((p) => ({ ...p, aspectRatio: v, aspectRatioCustom: c }))}
-            />
-
-            <Section title="빼고 싶은 것" hint="이미지에 나오지 않았으면 하는 요소입니다.">
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {NEGATIVE_OPTIONS.map((n) => (
-                  <CheckChip
-                    key={n.value}
-                    label={n.label}
-                    checked={input.negativeChecks.includes(n.value)}
-                    onChange={() => toggleNegative(n.value)}
-                  />
-                ))}
-              </div>
-              <input
-                type="text"
-                value={input.negativeCustom}
-                onChange={(e) => setField("negativeCustom", e.target.value)}
-                placeholder="직접 입력 (영어로 적어 주세요)"
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
-              />
-            </Section>
-
-            {/* 작업 유형별 옵션 */}
-            {input.workType === "character" && (
-              <CharacterOptionsBlock
-                value={input.character}
-                set={setCharField}
-              />
-            )}
-            {input.workType === "background" && (
-              <BackgroundOptionsBlock
-                value={input.background}
-                set={setBgField}
-              />
-            )}
-            {(input.workType === "frame" ||
-              input.workType === "icon" ||
-              input.workType === "object") && (
-              <AssetOptionsBlock
-                workType={input.workType}
-                value={input.asset}
-                set={setAssetField}
-                toggleRule={toggleAssetRule}
-              />
-            )}
-
-            <Section title="참고 이미지 (최대 3장)" hint="실제 이미지 분석은 하지 않습니다. 역할만 프롬프트에 반영됩니다.">
+            <Section
+              title="참고 이미지"
+              hint="이미지를 최대 3장까지 올릴 수 있습니다. 지금은 이미지 자체를 분석하지 않고 역할만 프롬프트에 반영됩니다."
+              collapsible
+              enabled={input.enabled.references}
+              onEnabledChange={(v) => setEnabled("references", v)}
+            >
               <div className="space-y-3">
                 {input.references.map((ref, i) => (
                   <ReferenceSlot
@@ -354,6 +288,131 @@ export default function HomePage() {
                 AI로 참고 이미지 분석하기 (준비 중)
               </button>
             </Section>
+
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleExtract}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-3 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                  title="현재 입력에서 키워드를 감지해 아래 옵션을 자동으로 채웁니다 (API 불필요)."
+                >
+                  <Wand2 size={16} /> 옵션으로 정리하기
+                </button>
+                <button
+                  type="button"
+                  disabled
+                  title="API 연결 후 활성화 예정 — 한글을 영어로 자연스럽게 변환하고 옵션을 더 정확히 추출합니다."
+                  className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
+                >
+                  <Wand2 size={16} /> AI로 정리하기
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                좌: 키워드 매칭으로 즉시 동작. 우: API 연결 시 더 정확한 분석.
+              </p>
+              {extractMessage && (
+                <p className="rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
+                  {extractMessage}
+                </p>
+              )}
+            </div>
+
+            <Section
+              title="작업 유형"
+              collapsible
+              enabled={input.enabled.workType}
+              onEnabledChange={(v) => setEnabled("workType", v)}
+            >
+              <div className="grid grid-cols-5 gap-2">
+                {WORK_TYPE_OPTIONS.map((w) => (
+                  <ChipSm
+                    key={w.value}
+                    label={w.label}
+                    active={input.workType === w.value}
+                    onClick={() => setField("workType", w.value as WorkType)}
+                  />
+                ))}
+              </div>
+            </Section>
+
+            <OptionPicker
+              label="스타일"
+              hint="이미지의 전체적인 그림 스타일입니다."
+              options={STYLE_OPTIONS}
+              value={input.style}
+              customText={input.styleCustom}
+              onChange={(v, c) => setInput((p) => ({ ...p, style: v, styleCustom: c }))}
+              enabled={input.enabled.style}
+              onEnabledChange={(v) => setEnabled("style", v)}
+            />
+
+            <OptionPicker
+              label="비율"
+              hint="이미지 가로세로 비율입니다."
+              options={ASPECT_RATIO_OPTIONS}
+              value={input.aspectRatio}
+              customText={input.aspectRatioCustom}
+              onChange={(v, c) => setInput((p) => ({ ...p, aspectRatio: v, aspectRatioCustom: c }))}
+              enabled={input.enabled.aspectRatio}
+              onEnabledChange={(v) => setEnabled("aspectRatio", v)}
+            />
+
+            <Section
+              title="빼고 싶은 것"
+              hint="이미지에 나오지 않았으면 하는 요소입니다."
+              collapsible
+              enabled={input.enabled.negative}
+              onEnabledChange={(v) => setEnabled("negative", v)}
+            >
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                {NEGATIVE_OPTIONS.map((n) => (
+                  <CheckChip
+                    key={n.value}
+                    label={n.label}
+                    checked={input.negativeChecks.includes(n.value)}
+                    onChange={() => toggleNegative(n.value)}
+                  />
+                ))}
+              </div>
+              <input
+                type="text"
+                value={input.negativeCustom}
+                onChange={(e) => setField("negativeCustom", e.target.value)}
+                placeholder="직접 입력 (영어 권장 — API 연결 후엔 한글도 가능)"
+                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
+              />
+            </Section>
+
+            {/* 작업 유형별 옵션 */}
+            {input.workType === "character" && (
+              <CharacterOptionsBlock
+                value={input.character}
+                set={setCharField}
+                enabled={input.enabled.character}
+                onEnabledChange={(v) => setEnabled("character", v)}
+              />
+            )}
+            {input.workType === "background" && (
+              <BackgroundOptionsBlock
+                value={input.background}
+                set={setBgField}
+                enabled={input.enabled.background}
+                onEnabledChange={(v) => setEnabled("background", v)}
+              />
+            )}
+            {(input.workType === "frame" ||
+              input.workType === "icon" ||
+              input.workType === "object") && (
+              <AssetOptionsBlock
+                workType={input.workType}
+                value={input.asset}
+                set={setAssetField}
+                toggleRule={toggleAssetRule}
+                enabled={input.enabled.asset}
+                onEnabledChange={(v) => setEnabled("asset", v)}
+              />
+            )}
           </aside>
 
           {/* 우측 결과 */}
@@ -362,19 +421,21 @@ export default function HomePage() {
 
             <ModelCard
               title="GPT Image"
-              hint="문장형 지시문 (영어만)"
+              hint="문장형 지시문 (한/영 모두 지원 — 토글로 전환)"
               options={GPT_OPTIONS}
               selected={gptModel}
               onSelect={setGptModel}
               content={gptOutput}
+              koreanContent={gptOutputKo}
             />
             <ModelCard
               title="Nano Banana"
-              hint="Goal / Subject / Style / Composition / Quality / Avoid 구조"
+              hint="Goal / Subject / Style / Composition / Quality / Avoid 구조 (한/영 토글)"
               options={NANO_OPTIONS}
               selected={nanoModel}
               onSelect={setNanoModel}
               content={nanoOutput}
+              koreanContent={nanoOutputKo}
             />
             <ModelCard
               title="Midjourney"
@@ -413,13 +474,33 @@ export default function HomePage() {
 function CharacterOptionsBlock({
   value,
   set,
+  enabled,
+  onEnabledChange,
 }: {
   value: CharacterInput;
   set: <K extends keyof CharacterInput>(k: K, v: CharacterInput[K]) => void;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
 }) {
+  const [open, setOpen] = useState(true);
+  const isOff = !enabled;
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">캐릭터 옵션</div>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((s) => !s)}
+          className="flex flex-1 items-center justify-between text-left"
+        >
+          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>캐릭터 옵션</div>
+          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        </button>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
+          사용
+        </label>
+      </div>
+      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
       <div className="grid gap-3 md:grid-cols-2">
         <OptionPicker label="성별" options={GENDER_OPTIONS}
           value={value.gender} customText={value.genderCustom}
@@ -455,6 +536,7 @@ function CharacterOptionsBlock({
       <OptionPicker label="캐릭터 제작 형태" options={CHARACTER_SHEET_OPTIONS} moreOptions={CHARACTER_SHEET_MORE_OPTIONS}
         value={value.characterSheet} customText={value.characterSheetCustom}
         onChange={(v, c) => { set("characterSheet", v); set("characterSheetCustom", c); }} />
+      </div>)}
     </div>
   );
 }
@@ -462,13 +544,33 @@ function CharacterOptionsBlock({
 function BackgroundOptionsBlock({
   value,
   set,
+  enabled,
+  onEnabledChange,
 }: {
   value: BackgroundInput;
   set: <K extends keyof BackgroundInput>(k: K, v: BackgroundInput[K]) => void;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
 }) {
+  const [open, setOpen] = useState(true);
+  const isOff = !enabled;
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">배경 옵션</div>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((s) => !s)}
+          className="flex flex-1 items-center justify-between text-left"
+        >
+          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>배경 옵션</div>
+          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        </button>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
+          사용
+        </label>
+      </div>
+      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
       <OptionPicker label="장소" options={PLACE_OPTIONS} moreOptions={PLACE_MORE_OPTIONS}
         value={value.place} customText={value.placeCustom}
         onChange={(v, c) => { set("place", v); set("placeCustom", c); }} />
@@ -507,6 +609,7 @@ function BackgroundOptionsBlock({
           value={value.visibleRange} customText={value.visibleRangeCustom}
           onChange={(v, c) => { set("visibleRange", v); set("visibleRangeCustom", c); }} />
       </div>
+      </div>)}
     </div>
   );
 }
@@ -516,12 +619,18 @@ function AssetOptionsBlock({
   value,
   set,
   toggleRule,
+  enabled,
+  onEnabledChange,
 }: {
   workType: WorkType;
   value: AssetInput;
   set: <K extends keyof AssetInput>(k: K, v: AssetInput[K]) => void;
   toggleRule: (v: string) => void;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
 }) {
+  const [open, setOpen] = useState(true);
+  const isOff = !enabled;
   const labelMap: Record<string, string> = {
     frame: "프레임 옵션",
     icon: "아이콘 옵션",
@@ -529,7 +638,21 @@ function AssetOptionsBlock({
   };
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">{labelMap[workType] ?? "에셋 옵션"}</div>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((s) => !s)}
+          className="flex flex-1 items-center justify-between text-left"
+        >
+          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>{labelMap[workType] ?? "에셋 옵션"}</div>
+          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+        </button>
+        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
+          사용
+        </label>
+      </div>
+      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
       <OptionPicker label="형태" options={SHAPE_OPTIONS}
         value={value.shape} customText={value.shapeCustom}
         onChange={(v, c) => { set("shape", v); set("shapeCustom", c); }} />
@@ -559,6 +682,7 @@ function AssetOptionsBlock({
           ))}
         </div>
       </Section>
+      </div>)}
     </div>
   );
 }
@@ -573,6 +697,8 @@ function OptionPicker({
   value,
   customText,
   onChange,
+  enabled,
+  onEnabledChange,
 }: {
   label: string;
   hint?: string;
@@ -581,6 +707,9 @@ function OptionPicker({
   value: string;
   customText: string;
   onChange: (value: string, customText: string) => void;
+  /** 정의되어 있으면 헤더에 "사용" 체크박스가 노출됩니다. */
+  enabled?: boolean;
+  onEnabledChange?: (v: boolean) => void;
 }) {
   const [showMore, setShowMore] = useState(false);
 
@@ -594,17 +723,37 @@ function OptionPicker({
     moreOptions?.find((o) => o.value === value);
   const isCustom = selectedOption?.en === "__custom__";
   const selectedDesc = selectedOption?.desc;
+  const tooltip = selectedDesc ?? hint;
+  const isOff = enabled === false;
+  const showToggle = enabled !== undefined && onEnabledChange !== undefined;
 
   return (
     <div>
-      <div className="mb-1 flex items-baseline justify-between gap-2">
-        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</label>
-        {(selectedDesc || hint) && (
-          <span className="truncate text-[10px] text-slate-400 dark:text-slate-500">
-            {selectedDesc ?? hint}
-          </span>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <label
+          title={tooltip}
+          className={`text-sm font-bold ${
+            isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"
+          } ${tooltip ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-300 dark:decoration-slate-600" : ""}`}
+        >
+          {label}
+        </label>
+        {showToggle && (
+          <label
+            className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => onEnabledChange!(e.target.checked)}
+              className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100"
+            />
+            사용
+          </label>
         )}
       </div>
+      <div className={isOff ? "opacity-40" : ""}>
       <div className="flex flex-wrap gap-1.5">
         {options.map((o) => (
           <ChipXs
@@ -651,6 +800,7 @@ function OptionPicker({
           className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
         />
       )}
+      </div>
     </div>
   );
 }
@@ -818,6 +968,7 @@ function ModelCard({
   selected,
   onSelect,
   content,
+  koreanContent,
 }: {
   title: string;
   hint: string;
@@ -825,9 +976,11 @@ function ModelCard({
   selected: ModelKey;
   onSelect: (m: ModelKey) => void;
   content: string;
+  /** 정의되어 있으면 카드에 한/영 토글이 노출되고, 표시 중인 언어로 복사됩니다. */
+  koreanContent?: string;
 }) {
   return (
-    <CardShell title={title} hint={hint} content={content}>
+    <CardShell title={title} hint={hint} content={content} koreanContent={koreanContent}>
       <select
         value={selected}
         onChange={(e) => onSelect(e.target.value as ModelKey)}
@@ -849,24 +1002,28 @@ function CardShell({
   title,
   hint,
   content,
+  koreanContent,
   children,
 }: {
   title: string;
   hint: string;
   content: string;
+  koreanContent?: string;
   children?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
-  useEffect(() => { setCopied(false); }, [content]);
+  const [lang, setLang] = useState<"en" | "ko">("en");
+  const displayed = lang === "ko" && koreanContent ? koreanContent : content;
+  useEffect(() => { setCopied(false); }, [displayed]);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(displayed);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       const ta = document.createElement("textarea");
-      ta.value = content;
+      ta.value = displayed;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
@@ -883,7 +1040,33 @@ function CardShell({
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {koreanContent && (
+            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setLang("en")}
+                className={`px-3 py-2 text-xs font-semibold transition ${
+                  lang === "en"
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                English
+              </button>
+              <button
+                type="button"
+                onClick={() => setLang("ko")}
+                className={`px-3 py-2 text-xs font-semibold transition ${
+                  lang === "ko"
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                }`}
+              >
+                한국어
+              </button>
+            </div>
+          )}
           {children}
           <button
             type="button"
@@ -900,7 +1083,7 @@ function CardShell({
         </div>
       </div>
       <div className="min-h-[120px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-        {content}
+        {displayed}
       </div>
     </div>
   );
@@ -912,18 +1095,69 @@ function Section({
   title,
   hint,
   children,
+  collapsible = false,
+  defaultOpen = true,
+  enabled,
+  onEnabledChange,
 }: {
   title: string;
+  /** 마우스 hover 시 헤더 툴팁으로 표시. 화면 텍스트로는 노출하지 않음. */
   hint?: string;
   children: React.ReactNode;
+  /** true면 헤더 클릭으로 본문을 접고 펼 수 있음. */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  /** 정의되어 있으면 헤더에 "사용" 체크박스가 노출됩니다. false면 본문이 dim 처리됩니다. */
+  enabled?: boolean;
+  onEnabledChange?: (v: boolean) => void;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isOff = enabled === false;
+  const showToggle = enabled !== undefined && onEnabledChange !== undefined;
+  const titleEl = (
+    <h2
+      title={hint}
+      className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"} ${
+        hint ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-300 dark:decoration-slate-600" : ""
+      }`}
+    >
+      {title}
+    </h2>
+  );
+  const toggleEl = showToggle ? (
+    <label
+      className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(e) => onEnabledChange!(e.target.checked)}
+        className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100"
+      />
+      사용
+    </label>
+  ) : null;
   return (
     <section>
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-600 dark:text-slate-300">{title}</h2>
-        {hint && <span className="truncate text-[10px] text-slate-400 dark:text-slate-500">{hint}</span>}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((s) => !s)}
+            className="flex flex-1 items-center gap-2 text-left"
+          >
+            {titleEl}
+            <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+          </button>
+        ) : (
+          <div className="flex flex-1 items-center gap-2">{titleEl}</div>
+        )}
+        {toggleEl}
       </div>
-      {children}
+      {(!collapsible || open) && (
+        <div className={isOff ? "opacity-40" : ""}>{children}</div>
+      )}
     </section>
   );
 }
