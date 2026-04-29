@@ -136,3 +136,38 @@ export async function aiAnalyzeImage(
   }
   return data.hints;
 }
+
+// AI hints를 PromptInput에 병합. 빈 문자열은 옵션 슬롯 무효화 방지를 위해 무시.
+import type { PromptInput, WorkType } from "./promptBuilder";
+
+export function mergeAiHints(prev: PromptInput, hints: AiExtractHints): PromptInput {
+  const next: PromptInput = {
+    ...prev,
+    character: { ...prev.character },
+    background: { ...prev.background },
+    asset: { ...prev.asset, rules: [...prev.asset.rules] },
+    references: prev.references.map((r) => ({ ...r })),
+    enabled: { ...prev.enabled },
+  };
+
+  if (hints.workType && hints.workType !== "") next.workType = hints.workType as WorkType;
+  if (hints.style && hints.style !== "") next.style = hints.style;
+  if (typeof hints.styleCustom === "string") next.styleCustom = hints.styleCustom;
+  if (hints.aspectRatio && hints.aspectRatio !== "") next.aspectRatio = hints.aspectRatio;
+  if (typeof hints.aspectRatioCustom === "string") next.aspectRatioCustom = hints.aspectRatioCustom;
+
+  const applyGroup = <T extends object>(target: T, src?: Record<string, string | null | undefined>) => {
+    if (!src) return;
+    for (const [k, v] of Object.entries(src)) {
+      if (v == null) continue;
+      // 옵션 슬롯의 빈 문자열은 무시. *Custom 필드는 빈 문자열도 의미 있음(=입력 없음)
+      if (v === "" && !k.endsWith("Custom")) continue;
+      (target as any)[k] = v;
+    }
+  };
+  applyGroup(next.character, hints.character);
+  applyGroup(next.background, hints.background);
+  applyGroup(next.asset, hints.asset);
+
+  return next;
+}

@@ -98,40 +98,7 @@ import {
 } from "@/lib/options";
 
 import { extractOptions, applyHintsToInput, countAppliedHints } from "@/lib/keywordExtract";
-import { aiTranslateKoreanToEnglish, aiExtractOptions, aiAnalyzeImage, AiError, AiExtractHints } from "@/lib/aiClient";
-
-// AI가 응답한 옵션 hints를 PromptInput에 병합한다.
-// - null/undefined인 슬롯은 기존 값을 유지
-// - 값이 있는 슬롯만 덮어쓰기
-function mergeAiHints(prev: PromptInput, hints: AiExtractHints): PromptInput {
-  const next: PromptInput = {
-    ...prev,
-    character: { ...prev.character },
-    background: { ...prev.background },
-    asset: { ...prev.asset, rules: [...prev.asset.rules] },
-    references: prev.references.map((r) => ({ ...r })),
-    enabled: { ...prev.enabled },
-  };
-
-  if (hints.workType) next.workType = hints.workType as WorkType;
-  if (hints.style) next.style = hints.style;
-  if (hints.styleCustom) next.styleCustom = hints.styleCustom;
-  if (hints.aspectRatio) next.aspectRatio = hints.aspectRatio;
-  if (hints.aspectRatioCustom) next.aspectRatioCustom = hints.aspectRatioCustom;
-
-  const applyGroup = <T extends object>(target: T, src?: Record<string, string | null | undefined>) => {
-    if (!src) return;
-    for (const [k, v] of Object.entries(src)) {
-      if (v == null) continue;
-      (target as any)[k] = v;
-    }
-  };
-  applyGroup(next.character, hints.character);
-  applyGroup(next.background, hints.background);
-  applyGroup(next.asset, hints.asset);
-
-  return next;
-}
+import { aiTranslateKoreanToEnglish, aiExtractOptions, aiAnalyzeImage, mergeAiHints, AiError, AiExtractHints } from "@/lib/aiClient";
 
 export default function HomePage() {
   const [input, setInput] = useState<PromptInput>(DEFAULT_INPUT);
@@ -216,14 +183,17 @@ export default function HomePage() {
     setExtractMessage(null);
     try {
       const hints = await aiExtractOptions(memo, eng);
+      // 디버깅: 응답 형식 확인용 (개발자도구 콘솔)
+      // eslint-disable-next-line no-console
+      console.log("[AI extract hints]", hints);
       setInput((p) => mergeAiHints(p, hints));
       setLastExtractedKey(`${memo}\n${eng}`);
-      setExtractMessage("AI가 옵션을 채웠습니다. 필요하면 직접 수정하세요.");
+      setExtractMessage("✓ AI 옵션 채우기 완료. 아래 옵션 그룹을 펼쳐서 확인하세요.");
     } catch (err) {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
     } finally {
       setAiExtracting(false);
-      setTimeout(() => setExtractMessage(null), 4000);
+      setTimeout(() => setExtractMessage(null), 7000);
     }
   };
 
@@ -240,14 +210,17 @@ export default function HomePage() {
     setExtractMessage(null);
     try {
       const hints = await aiAnalyzeImage(ref.src, ref.role);
+      // 디버깅: 응답 형식 확인용 (개발자도구 콘솔)
+      // eslint-disable-next-line no-console
+      console.log(`[AI image #${idx + 1} hints]`, hints);
       setInput((p) => mergeAiHints(p, hints));
       setLastAnalyzedKey((prev) => ({ ...prev, [idx]: `${ref.src}|${ref.role}` }));
-      setExtractMessage(`이미지 ${idx + 1} 분석 완료. 해당 역할의 옵션을 채웠습니다.`);
+      setExtractMessage(`✓ 이미지 ${idx + 1} 분석 완료. 해당 역할의 옵션을 펼쳐서 확인하세요.`);
     } catch (err) {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
     } finally {
       setAnalyzingIndex(null);
-      setTimeout(() => setExtractMessage(null), 4000);
+      setTimeout(() => setExtractMessage(null), 7000);
     }
   };
 
@@ -264,7 +237,7 @@ export default function HomePage() {
         ? `${n}개 항목을 자동으로 채웠습니다. 결과를 확인하고 자유롭게 수정하세요.`
         : "감지된 키워드가 없습니다. 한글 메모나 영어 보충 입력에 더 구체적인 단어를 적어 주세요."
     );
-    setTimeout(() => setExtractMessage(null), 4000);
+    setTimeout(() => setExtractMessage(null), 7000);
   };
 
   const handleReset = () => {

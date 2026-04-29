@@ -50,3 +50,4 @@ tests/nano_natural.ts
 tests/nano_front.ts
 tests/nano_v2.ts
 tests/nano_v3.ts
+tests/merge_test.ts

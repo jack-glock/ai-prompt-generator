@@ -127,10 +127,11 @@ Read the user input (Korean memo + English supplement) and decide which options 
 Rules:
 1. For each slot, choose the EXACT value from the list below if the input clearly indicates it.
 2. If the input mentions something that doesn't match any value (e.g. "red hair" when only standard colors exist), set the slot to "custom" and put a concise English phrase in the corresponding *Custom field (e.g. hair: "custom", hairCustom: "red hair").
-3. If the input doesn't mention a slot at all, leave the slot value as null and the *Custom as "".
-4. Do NOT invent details not present in the input.
-5. Do NOT mention specific brand names, game titles, or real artist names in any *Custom field.
-6. Output ONLY valid JSON matching the schema below. No prose.
+3. If the input doesn't mention a slot at all, set the slot value to JSON null (NOT empty string "") and the *Custom to "".
+4. NEVER use empty string "" for slot values. Always use null when nothing is specified.
+5. Do NOT invent details not present in the input.
+6. Do NOT mention specific brand names, game titles, or real artist names in any *Custom field.
+7. Output ONLY valid JSON matching the schema below. No prose.
 
 Available slot values:
 ${buildSlotMap()}
