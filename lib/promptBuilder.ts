@@ -879,10 +879,7 @@ export function buildGptImageKorean(input: PromptInput): string {
   }
 
   // 영어 보충 입력 — 영어로 적혀 있어도 그대로 포함 (GPT가 처리 가능)
-  const eng = (input.englishSupplement ?? "").trim();
-  if (eng) {
-    parts.push(`추가 지시: ${eng}.`);
-  }
+  // 영어 보충 입력은 영어 빌더 전용 — 한국어 빌더에서는 한글 메모와 중복되지 않도록 제외
 
   // 스타일
   if (en.style) {
@@ -935,8 +932,7 @@ export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): stri
   const subj = collectMainTokensKo(input);
   const memo = (input.koreanMemo ?? "").trim();
   if (memo) subj.push(`작가 메모: ${memo}`);
-  const engSup = (input.englishSupplement ?? "").trim();
-  if (engSup) subj.push(engSup);
+  // 영어 보충 입력은 영어 빌더 전용 — 한국어 빌더에서는 한글 메모와 중복되지 않도록 제외
   if (subj.length > 0) lines.push(`주요 디테일: ${subj.join(", ")}.`);
 
   if (en.style) {

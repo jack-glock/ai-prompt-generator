@@ -98,6 +98,40 @@ import {
 } from "@/lib/options";
 
 import { extractOptions, applyHintsToInput, countAppliedHints } from "@/lib/keywordExtract";
+import { aiTranslateKoreanToEnglish, aiExtractOptions, AiError, AiExtractHints } from "@/lib/aiClient";
+
+// AI가 응답한 옵션 hints를 PromptInput에 병합한다.
+// - null/undefined인 슬롯은 기존 값을 유지
+// - 값이 있는 슬롯만 덮어쓰기
+function mergeAiHints(prev: PromptInput, hints: AiExtractHints): PromptInput {
+  const next: PromptInput = {
+    ...prev,
+    character: { ...prev.character },
+    background: { ...prev.background },
+    asset: { ...prev.asset, rules: [...prev.asset.rules] },
+    references: prev.references.map((r) => ({ ...r })),
+    enabled: { ...prev.enabled },
+  };
+
+  if (hints.workType) next.workType = hints.workType as WorkType;
+  if (hints.style) next.style = hints.style;
+  if (hints.styleCustom) next.styleCustom = hints.styleCustom;
+  if (hints.aspectRatio) next.aspectRatio = hints.aspectRatio;
+  if (hints.aspectRatioCustom) next.aspectRatioCustom = hints.aspectRatioCustom;
+
+  const applyGroup = <T extends object>(target: T, src?: Record<string, string | null | undefined>) => {
+    if (!src) return;
+    for (const [k, v] of Object.entries(src)) {
+      if (v == null) continue;
+      (target as any)[k] = v;
+    }
+  };
+  applyGroup(next.character, hints.character);
+  applyGroup(next.background, hints.background);
+  applyGroup(next.asset, hints.asset);
+
+  return next;
+}
 
 export default function HomePage() {
   const [input, setInput] = useState<PromptInput>(DEFAULT_INPUT);
@@ -132,6 +166,61 @@ export default function HomePage() {
   const mjOutput = useMemo(() => buildPromptFor(mjModel, input), [mjModel, input]);
   const nijiOutput = useMemo(() => buildPromptFor(nijiModel, input), [nijiModel, input]);
   const revisionOutput = useMemo(() => buildRevisionPrompt(input), [input]);
+
+  // === 핸들러: AI 번역 ===
+  const [translating, setTranslating] = useState(false);
+  const [translateMessage, setTranslateMessage] = useState<string | null>(null);
+  const handleAiTranslate = async () => {
+    const memo = input.koreanMemo.trim();
+    if (!memo) {
+      setTranslateMessage("먼저 한글 메모를 적어 주세요.");
+      setTimeout(() => setTranslateMessage(null), 3000);
+      return;
+    }
+    setTranslating(true);
+    setTranslateMessage(null);
+    try {
+      const { english } = await aiTranslateKoreanToEnglish(memo);
+      // 영어 보충 입력에 채우기 (기존 내용이 있으면 줄바꿈으로 추가)
+      setInput((p) => ({
+        ...p,
+        englishSupplement: p.englishSupplement.trim()
+          ? `${p.englishSupplement.trim()}\n${english}`
+          : english,
+      }));
+      setTranslateMessage("번역 완료. 영어 보충 입력에 채워졌습니다.");
+    } catch (err) {
+      const msg = err instanceof AiError ? err.message : "AI 호출 실패";
+      setTranslateMessage(msg);
+    } finally {
+      setTranslating(false);
+      setTimeout(() => setTranslateMessage(null), 4000);
+    }
+  };
+
+  // === 핸들러: AI로 옵션 채우기 ===
+  const [aiExtracting, setAiExtracting] = useState(false);
+  const handleAiExtract = async () => {
+    const memo = input.koreanMemo.trim();
+    const eng = input.englishSupplement.trim();
+    if (!memo && !eng) {
+      setExtractMessage("먼저 한글 메모나 영어 보충 입력에 내용을 적어 주세요.");
+      setTimeout(() => setExtractMessage(null), 3000);
+      return;
+    }
+    setAiExtracting(true);
+    setExtractMessage(null);
+    try {
+      const hints = await aiExtractOptions(memo, eng);
+      setInput((p) => mergeAiHints(p, hints));
+      setExtractMessage("AI가 옵션을 채웠습니다. 필요하면 직접 수정하세요.");
+    } catch (err) {
+      setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
+    } finally {
+      setAiExtracting(false);
+      setTimeout(() => setExtractMessage(null), 4000);
+    }
+  };
 
   // === 핸들러: 옵션 정리 ===
   const [extractMessage, setExtractMessage] = useState<string | null>(null);
@@ -260,12 +349,19 @@ export default function HomePage() {
               />
               <button
                 type="button"
-                disabled
-                title="API 연결 후 활성화 — 위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다."
-                className="mt-2 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
+                onClick={handleAiTranslate}
+                disabled={translating}
+                title="위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다 (Gemini 2.5 Flash, 1회 약 1~2원)."
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
               >
-                <Wand2 size={14} /> AI로 영어 번역하기 (준비 중)
+                <Wand2 size={14} className={translating ? "animate-spin" : ""} />
+                {translating ? "번역 중..." : "AI로 영어 번역하기"}
               </button>
+              {translateMessage && (
+                <p className="mt-2 rounded-xl bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  {translateMessage}
+                </p>
+              )}
             </Section>
 
             <Section title="영어 보충 입력 (선택)" hint="이 내용은 최종 영어 프롬프트에 그대로 들어갑니다.">
@@ -284,7 +380,7 @@ export default function HomePage() {
               enabled={input.enabled.references}
               onEnabledChange={(v) => setEnabled("references", v)}
             >
-              <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
                 {input.references.map((ref, i) => (
                   <ReferenceSlot
                     key={i}
@@ -316,11 +412,13 @@ export default function HomePage() {
                 </button>
                 <button
                   type="button"
-                  disabled
-                  title="API 연결 후 활성화 — 한글을 영어로 변환하고 옵션을 더 정확히 추출합니다 (정확도↑)."
-                  className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
+                  onClick={handleAiExtract}
+                  disabled={aiExtracting}
+                  title="LLM이 입력을 분석해 옵션 슬롯에 정확하게 분배합니다 (Gemini 2.5 Flash, 1회 약 2~4원). 정해진 값에 없으면 '직접 입력'으로 채워집니다."
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
                 >
-                  <Wand2 size={16} /> AI로 옵션 채우기
+                  <Wand2 size={16} className={aiExtracting ? "animate-spin" : ""} />
+                  {aiExtracting ? "분석 중..." : "AI로 옵션 채우기"}
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -791,16 +889,18 @@ function ReferenceSlot({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">이미지 {index + 1}</div>
+    <div className="rounded-xl border border-slate-200 p-2 dark:border-slate-700">
+      <div className="mb-1.5 flex items-center justify-between">
+        <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">#{index + 1}</div>
         {value.src && (
           <button
             type="button"
             onClick={() => onChange({ src: null })}
-            className="inline-flex items-center gap-1 rounded-full bg-slate-900/80 px-2 py-1 text-[10px] font-semibold text-white hover:bg-slate-900 dark:bg-slate-100/80 dark:text-slate-900 dark:hover:bg-slate-100"
+            title="제거"
+            aria-label="이미지 제거"
+            className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/80 text-white hover:bg-slate-900 dark:bg-slate-100/80 dark:text-slate-900 dark:hover:bg-slate-100"
           >
-            <X size={10} /> 제거
+            <X size={10} />
           </button>
         )}
       </div>
@@ -813,35 +913,34 @@ function ReferenceSlot({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className={`flex h-20 w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed transition ${
+            title="클릭 또는 이미지를 끌어다 놓기"
+            className={`flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed transition ${
               dragOver
                 ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-300"
-                : "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                : "border-slate-400 bg-slate-200 text-slate-600 hover:bg-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
             }`}
           >
-            <ImagePlus size={18} />
-            <span className="text-[11px] font-semibold">클릭 또는 끌어다 놓기</span>
+            <ImagePlus size={16} />
+            <span className="text-[10px] font-semibold">클릭/드롭</span>
           </button>
         ) : (
-          <div className="h-20 w-full overflow-hidden rounded-xl bg-slate-50 dark:bg-slate-800">
+          <div className="aspect-square w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={value.src} alt={`참고 이미지 ${index + 1}`} className="h-full w-full object-contain" />
           </div>
         )}
       </div>
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
-      <div className="mt-2">
-        <label className="mb-1 block text-[10px] font-semibold text-slate-500 dark:text-slate-400">역할</label>
-        <select
-          value={value.role}
-          onChange={(e) => onChange({ role: e.target.value })}
-          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-        >
-          {REFERENCE_ROLE_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      </div>
+      <select
+        value={value.role}
+        onChange={(e) => onChange({ role: e.target.value })}
+        title="이미지의 역할"
+        className="mt-1.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+      >
+        {REFERENCE_ROLE_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
     </div>
   );
 }
