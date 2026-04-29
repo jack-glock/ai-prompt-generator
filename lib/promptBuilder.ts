@@ -448,15 +448,27 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
 
   const sentences: string[] = [];
 
-  // 메인 한 문장: 작품 종류 + 주요 디테일 + 스타일을 자연스럽게 한 문단으로 결합
-  const mainParts: string[] = [];
-  if (main.length > 0) mainParts.push(main.join(", "));
-  if (eng) mainParts.push(eng);
-  if (style) mainParts.push(`in ${style}`);
-  if (mainParts.length > 0) {
-    sentences.push(`Create ${work} of ${mainParts.join(", ")}.`);
+  // 1. 스타일을 별도 첫 문장으로 — 콤마 구분된 키워드를 "with" 절로 자연스럽게 변환
+  if (style) {
+    const styleParts = style.split(",").map((p) => p.trim()).filter(Boolean);
+    const firstStyle = styleParts[0] ?? "";
+    const restStyle = styleParts.slice(1).join(", ");
+    const cap = firstStyle.charAt(0).toUpperCase() + firstStyle.slice(1);
+    sentences.push(restStyle ? `${cap} with ${restStyle}.` : `${cap}.`);
+  }
+
+  // 2. 메인 묘사: work는 이미 "a game character illustration" 같이 'a'로 시작하므로
+  //    첫 글자만 대문자화 (이중 'A a' 방지)
+  const workCap = work.charAt(0).toUpperCase() + work.slice(1);
+  if (main.length > 0) {
+    sentences.push(`${workCap} featuring ${main.join(", ")}.`);
   } else {
     sentences.push(`Create ${work}.`);
+  }
+
+  // 3. 영어 보충 입력은 별도 문장으로 분리 (묘사 사이에 안 끼게)
+  if (eng) {
+    sentences.push(`${eng}.`);
   }
 
   // 구도
@@ -896,21 +908,26 @@ export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): stri
     ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.label ?? "이미지")
     : "이미지";
 
-  // 메인 한 문장
-  const mainParts: string[] = [];
-  const mainTokens = collectMainTokensKo(input);
-  if (mainTokens.length > 0) mainParts.push(mainTokens.join(", "));
-  const memo = (input.koreanMemo ?? "").trim();
-  if (memo) mainParts.push(`작가 메모: ${memo}`);
-  // 영어 보충 입력은 한국어 빌더에서 제외
-  if (en.style) {
-    const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
-    if (styleLabel) mainParts.push(`${styleLabel} 스타일`);
+  // 1. 스타일을 앞에 — 별도 짧은 문장으로 강조
+  const styleLabel = en.style
+    ? resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom)
+    : "";
+  if (styleLabel) {
+    sentences.push(`${styleLabel} 스타일.`);
   }
-  if (mainParts.length > 0) {
-    sentences.push(`${workLabel}를 만들어 주세요. 주요 묘사: ${mainParts.join(", ")}.`);
+
+  // 2. 메인 묘사
+  const mainTokens = collectMainTokensKo(input);
+  if (mainTokens.length > 0) {
+    sentences.push(`${workLabel}를 만들어 주세요. 주요 묘사: ${mainTokens.join(", ")}.`);
   } else {
     sentences.push(`${workLabel}를 만들어 주세요.`);
+  }
+
+  // 3. 한글 메모
+  const memo = (input.koreanMemo ?? "").trim();
+  if (memo) {
+    sentences.push(`작가 메모: ${memo}.`);
   }
 
   // 구도

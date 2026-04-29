@@ -47,3 +47,6 @@ tests/lang_check.ts
 tests/mj_check.ts
 tests/refcheck.ts
 tests/nano_natural.ts
+tests/nano_front.ts
+tests/nano_v2.ts
+tests/nano_v3.ts
