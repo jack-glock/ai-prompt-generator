@@ -436,6 +436,8 @@ function buildGptImage(input: PromptInput): string {
 }
 
 function buildNanoBanana(input: PromptInput, model: ModelKey): string {
+  // Google 공식 권장에 따라 "자연어 서술 문장"으로 빌드합니다.
+  // (구조형 라벨 Goal:/Subject:/Style: 등은 Nano Banana에서 비권장)
   const work = input.enabled.workType
     ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en ?? "an illustration")
     : "an illustration";
@@ -443,41 +445,43 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
   const main = collectMainTokens(input);
   const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const refs = activeReferences(input);
 
-  // 각 섹션을 한 줄씩으로 압축 (구조 유지, 항목은 콤마 결합).
-  const lines: string[] = [];
+  const sentences: string[] = [];
 
-  lines.push(`Goal: Create ${work}.`);
-
-  const subj = [...main];
-  if (eng) subj.push(eng);
-  if (subj.length > 0) lines.push(`Subject: ${subj.join(", ")}.`);
-
-  if (style) lines.push(`Style: ${style}.`);
-
-  const compos: string[] = [];
-  if (input.enabled.aspectRatio) compos.push(`aspect ratio ${resolveAspectRatio(input)}`);
-  compos.push("clean composition", "clear focal point", "balanced layout");
-  lines.push(`Composition: ${compos.join(", ")}.`);
-
-  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 Gemini API/도구에 이미지를 직접 첨부
-
-  let quality: string[];
-  if (model === "nano_banana_pro") {
-    quality = ["4K, professional print-ready", "multilingual text rendering"];
-  } else if (model === "nano_banana_2") {
-    quality = ["2K or higher", "precise aspect ratio"];
+  // 메인 한 문장: 작품 종류 + 주요 디테일 + 스타일을 자연스럽게 한 문단으로 결합
+  const mainParts: string[] = [];
+  if (main.length > 0) mainParts.push(main.join(", "));
+  if (eng) mainParts.push(eng);
+  if (style) mainParts.push(`in ${style}`);
+  if (mainParts.length > 0) {
+    sentences.push(`Create ${work} of ${mainParts.join(", ")}.`);
   } else {
-    quality = ["commercial game asset quality", "clean readable design"];
+    sentences.push(`Create ${work}.`);
   }
-  lines.push(`Quality: ${quality.join(", ")}.`);
 
+  // 구도
+  if (input.enabled.aspectRatio) {
+    sentences.push(`Compose at ${resolveAspectRatio(input)} aspect ratio with a clear focal point and balanced layout.`);
+  } else {
+    sentences.push("Use a clear focal point and balanced layout.");
+  }
+
+  // 모델별 강조점 (capability 차등)
+  if (model === "nano_banana_pro") {
+    sentences.push("Render in 4K resolution with intricate details and professional print-ready quality. Render any text exactly as specified, with multilingual support enabled.");
+  } else if (model === "nano_banana_2") {
+    sentences.push("Render in 2K or higher resolution with refined detail and precise aspect ratio. Maintain a coherent, polished result.");
+  } else {
+    sentences.push("Render in commercial game asset quality with clean, readable design.");
+  }
+
+  // 회피 요소 — "no " / "avoid " 접두사 제거하여 "Avoid no text" 같은 이중부정 방지
   if (negatives.length > 0) {
-    lines.push(`Avoid: ${negatives.join(", ")}.`);
+    const cleaned = negatives.map((n) => n.replace(/^no /i, "").replace(/^avoid /i, ""));
+    sentences.push(`Avoid ${cleaned.join(", ")}.`);
   }
 
-  return lines.join("\n");
+  return sentences.join(" ");
 }
 
 function buildMidjourney(input: PromptInput, _model: ModelKey): string {
@@ -883,52 +887,57 @@ export function buildGptImageKorean(input: PromptInput): string {
 }
 
 // ===== Nano Banana 한국어 버전 =====
-// 영어 버전과 동일하게 각 섹션을 한 줄씩으로 압축한다 (구조 유지 + 콤마 결합).
+// Google 권장에 따라 자연어 서술 문장형. 모델별로 capability 강조를 다르게.
 export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): string {
   const en = input.enabled;
-  const lines: string[] = [];
+  const sentences: string[] = [];
 
   const workLabel = en.workType
     ? (WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.label ?? "이미지")
     : "이미지";
-  lines.push(`목표: ${workLabel}를 만든다.`);
 
-  const subj = collectMainTokensKo(input);
+  // 메인 한 문장
+  const mainParts: string[] = [];
+  const mainTokens = collectMainTokensKo(input);
+  if (mainTokens.length > 0) mainParts.push(mainTokens.join(", "));
   const memo = (input.koreanMemo ?? "").trim();
-  if (memo) subj.push(`작가 메모: ${memo}`);
-  // 영어 보충 입력은 영어 빌더 전용 — 한국어 빌더에서는 한글 메모와 중복되지 않도록 제외
-  if (subj.length > 0) lines.push(`주요 디테일: ${subj.join(", ")}.`);
-
+  if (memo) mainParts.push(`작가 메모: ${memo}`);
+  // 영어 보충 입력은 한국어 빌더에서 제외
   if (en.style) {
     const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
-    if (styleLabel) lines.push(`스타일: ${styleLabel}.`);
+    if (styleLabel) mainParts.push(`${styleLabel} 스타일`);
   }
-
-  const compos: string[] = [];
-  if (en.aspectRatio) compos.push(`비율 ${resolveAspectRatio(input)}`);
-  compos.push("깔끔한 구도", "명확한 초점", "균형 잡힌 배치");
-  lines.push(`구도: ${compos.join(", ")}.`);
-
-  // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 Gemini 등에 이미지를 직접 첨부
-
-  let quality: string[];
-  if (model === "nano_banana_pro") {
-    quality = ["4K 인쇄용 고품질", "다국어 텍스트 렌더링"];
-  } else if (model === "nano_banana_2") {
-    quality = ["2K 이상 해상도", "정확한 비율 유지"];
+  if (mainParts.length > 0) {
+    sentences.push(`${workLabel}를 만들어 주세요. 주요 묘사: ${mainParts.join(", ")}.`);
   } else {
-    quality = ["게임 에셋용 상업 품질", "깔끔하고 알아보기 쉬운 디자인"];
+    sentences.push(`${workLabel}를 만들어 주세요.`);
   }
-  lines.push(`품질: ${quality.join(", ")}.`);
 
+  // 구도
+  if (en.aspectRatio) {
+    sentences.push(`비율 ${resolveAspectRatio(input)}로, 명확한 초점과 균형 잡힌 배치로 구도를 잡아 주세요.`);
+  } else {
+    sentences.push("명확한 초점과 균형 잡힌 배치로 구도를 잡아 주세요.");
+  }
+
+  // 모델별 capability 강조
+  if (model === "nano_banana_pro") {
+    sentences.push("4K 해상도, 정교한 디테일과 인쇄에 바로 쓸 수 있는 고품질로 렌더링해 주세요. 텍스트가 있다면 다국어 지원으로 정확하게 렌더링해 주세요.");
+  } else if (model === "nano_banana_2") {
+    sentences.push("2K 이상 해상도, 정확한 비율과 균형 잡힌 디테일로 렌더링해 주세요.");
+  } else {
+    sentences.push("게임 에셋으로 바로 쓸 수 있도록 깔끔하고 알아보기 쉬운 상업 품질로 렌더링해 주세요.");
+  }
+
+  // 회피 요소
   if (en.negative) {
     const negs = input.negativeChecks
       .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
       .filter((x): x is string => !!x);
     const customNeg = (input.negativeCustom ?? "").trim();
     if (customNeg) negs.push(customNeg);
-    if (negs.length > 0) lines.push(`빼주세요: ${negs.join(", ")}.`);
+    if (negs.length > 0) sentences.push(`다음은 빼주세요: ${negs.join(", ")}.`);
   }
 
-  return lines.join("\n");
+  return sentences.join(" ");
 }

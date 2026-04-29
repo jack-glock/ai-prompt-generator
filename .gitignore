@@ -46,3 +46,4 @@ tests/audit.ts
 tests/lang_check.ts
 tests/mj_check.ts
 tests/refcheck.ts
+tests/nano_natural.ts
