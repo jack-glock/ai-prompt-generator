@@ -251,6 +251,14 @@ export default function HomePage() {
                 placeholder="예: 20대 여성 캐릭터, 슬림 체형, 긴 흰색 웨이브 머리, 금색 판타지 갑옷, 전신, 비스듬한 각도"
                 className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
               />
+              <button
+                type="button"
+                disabled
+                title="API 연결 후 활성화 — 위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다."
+                className="mt-2 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
+              >
+                <Wand2 size={14} /> AI로 영어 번역하기 (준비 중)
+              </button>
             </Section>
 
             <Section title="영어 보충 입력 (선택)" hint="이 내용은 최종 영어 프롬프트에 그대로 들어갑니다.">
@@ -1035,54 +1043,52 @@ function CardShell({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {koreanContent && (
-            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => setLang("en")}
-                className={`px-3 py-2 text-xs font-semibold transition ${
-                  lang === "en"
-                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                    : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                }`}
-              >
-                English
-              </button>
-              <button
-                type="button"
-                onClick={() => setLang("ko")}
-                className={`px-3 py-2 text-xs font-semibold transition ${
-                  lang === "ko"
-                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                    : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                }`}
-              >
-                한국어
-              </button>
-            </div>
-          )}
-          {children}
-          <button
-            type="button"
-            onClick={handleCopy}
-            className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-              copied
-                ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-            }`}
-          >
-            {copied ? <Check size={15} /> : <Copy size={15} />}
-            {copied ? "복사됨" : "복사"}
-          </button>
-        </div>
+        {koreanContent && (
+          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => setLang("en")}
+              className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                lang === "en"
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => setLang("ko")}
+              className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                lang === "ko"
+                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              }`}
+            >
+              한국어
+            </button>
+          </div>
+        )}
+        {children}
       </div>
-      <div className="min-h-[120px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+      <div className="relative min-h-[120px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 pr-24 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={`absolute right-2 top-2 inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+            copied
+              ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
+              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+          }`}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "복사됨" : "복사"}
+        </button>
         {displayed}
       </div>
     </div>
@@ -1107,58 +1113,105 @@ function Section({
   /** true면 헤더 클릭으로 본문을 접고 펼 수 있음. */
   collapsible?: boolean;
   defaultOpen?: boolean;
-  /** 정의되어 있으면 헤더에 "사용" 체크박스가 노출됩니다. false면 본문이 dim 처리됩니다. */
+  /** 정의되어 있으면 헤더에 사용 토글 스위치가 노출됩니다. false면 본문이 dim 처리됩니다. */
   enabled?: boolean;
   onEnabledChange?: (v: boolean) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const isOff = enabled === false;
   const showToggle = enabled !== undefined && onEnabledChange !== undefined;
-  const titleEl = (
-    <h2
+
+  const headerClass = `flex items-center gap-2 rounded-xl px-3 py-2.5 transition ${
+    isOff
+      ? "bg-slate-100 dark:bg-slate-800/60"
+      : "bg-slate-50 dark:bg-slate-800/40"
+  } ${collapsible ? "hover:bg-slate-100 dark:hover:bg-slate-800/70" : ""}`;
+
+  const titleText = (
+    <span
       title={hint}
-      className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"} ${
-        hint ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-300 dark:decoration-slate-600" : ""
-      }`}
+      className={`text-sm font-bold ${
+        isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
+      } ${hint ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-400/60 dark:decoration-slate-500/60" : ""}`}
     >
       {title}
-    </h2>
+    </span>
   );
-  const toggleEl = showToggle ? (
-    <label
-      className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <input
-        type="checkbox"
-        checked={enabled}
-        onChange={(e) => onEnabledChange!(e.target.checked)}
-        className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100"
-      />
-      사용
-    </label>
-  ) : null;
+
   return (
     <section>
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className={headerClass}>
         {collapsible ? (
           <button
             type="button"
             onClick={() => setOpen((s) => !s)}
             className="flex flex-1 items-center gap-2 text-left"
+            aria-expanded={open}
           >
-            {titleEl}
-            <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
+            <ChevronDown
+              size={18}
+              className={`shrink-0 text-slate-500 transition-transform ${open ? "" : "-rotate-90"}`}
+            />
+            {titleText}
           </button>
         ) : (
-          <div className="flex flex-1 items-center gap-2">{titleEl}</div>
+          <div className="flex flex-1 items-center gap-2 px-1">{titleText}</div>
         )}
-        {toggleEl}
+        {showToggle && (
+          <ToggleSwitch
+            checked={!!enabled}
+            onChange={(v) => onEnabledChange!(v)}
+            label={enabled ? "사용 중" : "꺼짐"}
+          />
+        )}
       </div>
       {(!collapsible || open) && (
-        <div className={isOff ? "opacity-40" : ""}>{children}</div>
+        <div className={`pt-3 ${isOff ? "pointer-events-none opacity-50" : ""}`}>{children}</div>
       )}
     </section>
+  );
+}
+
+/** iOS 스타일 토글 스위치. 체크박스보다 ON/OFF가 한눈에 보입니다. */
+function ToggleSwitch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange(!checked);
+      }}
+      className="flex shrink-0 items-center gap-1.5"
+    >
+      <span
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
+          checked
+            ? "bg-blue-600 dark:bg-blue-500"
+            : "bg-slate-300 dark:bg-slate-600"
+        }`}
+      >
+        <span
+          className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+            checked ? "translate-x-[18px]" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+      {label && (
+        <span className={`text-[10px] font-semibold ${checked ? "text-blue-600 dark:text-blue-400" : "text-slate-400 dark:text-slate-500"}`}>
+          {label}
+        </span>
+      )}
+    </button>
   );
 }
 
