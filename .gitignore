@@ -34,3 +34,6 @@ next-env.d.ts
 
 # DevSync 로컬 데이터 (PC별 — Git 추적 안 함)
 .devsync/
+
+# 검증용 임시 빈 파일 (워크스페이스 권한 제약으로 OS레벨 삭제 불가)
+tests/style_check.ts

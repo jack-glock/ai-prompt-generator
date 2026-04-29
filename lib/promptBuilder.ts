@@ -1,547 +1,735 @@
-// 프롬프트 생성 로직
-// v0.5: 다크 모드 + Niji 전용 7항목 입력 + 모델 12종 분기 + 스타일 16종 + 하이라이트 토큰
-// 정책 근거: docs/design-docs/PROMPT_STRATEGY.md §2 (재개정판)
-// 모델 사양: docs/model-specs/
+// 프롬프트 빌더 (v0.6 재구조화)
+// - 작업 유형 5종(character/background/frame/icon/object)
+// - 한글 자유입력은 "원본 한글 메모"로만 노출되고, 최종 영어 프롬프트에는
+//   절대 포함되지 않습니다.
+// - 영어 보충 입력은 모든 모델 프롬프트에 그대로 반영됩니다.
+// - 옵션은 한글 라벨로 UI에 표시되고, 영어 표현은 lib/options.ts에서 가져옵니다.
+// - API 미사용. 키워드 매칭으로만 자동 정리(lib/keywordExtract.ts).
 
-export type WorkType = "banner" | "character" | "frame" | "background" | "icon";
+import {
+  ModelKey,
+  WORK_TYPE_OPTIONS,
+  WORK_TYPE_KEYWORD,
+  STYLE_OPTIONS,
+  ASPECT_RATIO_OPTIONS,
+  NEGATIVE_OPTIONS,
+  GENDER_OPTIONS,
+  AGE_OPTIONS,
+  BODY_OPTIONS,
+  HAIR_OPTIONS,
+  HAIR_MORE_OPTIONS,
+  OUTFIT_OPTIONS,
+  OUTFIT_MORE_OPTIONS,
+  POSE_OPTIONS,
+  POSE_MORE_OPTIONS,
+  VISIBLE_RANGE_OPTIONS,
+  VISIBLE_RANGE_MORE_OPTIONS,
+  VIEW_ANGLE_OPTIONS,
+  VIEW_ANGLE_MORE_OPTIONS,
+  CHARACTER_DIRECTION_OPTIONS,
+  CHARACTER_DIRECTION_MORE_OPTIONS,
+  CHARACTER_SHEET_OPTIONS,
+  CHARACTER_SHEET_MORE_OPTIONS,
+  CHARACTER_SHEET_EXTRA_KEYWORDS,
+  PLACE_OPTIONS,
+  PLACE_MORE_OPTIONS,
+  TIME_OF_DAY_OPTIONS,
+  MOOD_OPTIONS,
+  LIGHTING_OPTIONS,
+  COLOR_PALETTE_OPTIONS,
+  DEPTH_OPTIONS,
+  COMPLEXITY_OPTIONS,
+  LAYOUT_OPTIONS,
+  BG_VIEW_ANGLE_OPTIONS,
+  BG_VISIBLE_RANGE_OPTIONS,
+  SHAPE_OPTIONS,
+  SURFACE_OPTIONS,
+  DIMENSION_OPTIONS,
+  DECORATION_LEVEL_OPTIONS,
+  BG_TREATMENT_OPTIONS,
+  ASSET_RULES_OPTIONS,
+  ASSET_TYPE_EXTRA,
+  REFERENCE_ROLE_OPTIONS,
+  REFERENCE_ROLE_SENTENCE,
+  REFERENCE_ROLE_MJ_PARAM,
+  REFERENCE_ROLE_NIJI_PARAM,
+  resolveOptionEn,
+  resolveOptionLabel,
+  containsKorean,
+  OptionItem,
+} from "./options";
 
-export type StyleType =
-  | "casual_game"
-  | "realistic"
-  | "cartoon"
-  | "2_5d"
-  | "retro"
-  | "neon"
-  | "premium_gold"
-  | "anime_manga"
-  | "chibi"
-  | "pixel_art"
-  | "concept_art"
-  | "flat_vector"
-  | "cyberpunk"
-  | "dark_fantasy"
-  | "slot_premium"
-  | "disney_pixar";
+export type WorkType = "character" | "background" | "frame" | "icon" | "object";
 
-export type RatioType = "16:9" | "4:3" | "1:1" | "3:4" | "1000x600" | "custom";
-export type ReferenceRole =
-  | "style"
-  | "composition"
-  | "color"
-  | "character"
-  | "material";
-
-// v0.5 신규: Niji 빌더 전용 7항목 입력. 비어 있으면 영어 textarea를 폴백으로 사용.
-export interface NijiKeywords {
-  appearance: string; // 외형 (성별, 연령, 헤어, 눈색)
-  expression: string; // 표정 / 감정
-  pose: string;       // 포즈 / 액션
-  outfit: string;     // 의상 / 액세서리
-  background: string; // 배경 / 환경
-  angle: string;      // 화각 / 구도 (close-up, full body 등)
-  medium: string;     // 매체 (anime style, cel shading, key visual 등)
+export interface CharacterInput {
+  gender: string;
+  genderCustom: string;
+  ageRange: string;
+  ageRangeCustom: string;
+  bodyType: string;
+  bodyTypeCustom: string;
+  hair: string;
+  hairCustom: string;
+  outfit: string;
+  outfitCustom: string;
+  pose: string;
+  poseCustom: string;
+  visibleRange: string;
+  visibleRangeCustom: string;
+  viewingAngle: string;
+  viewingAngleCustom: string;
+  characterDirection: string;
+  characterDirectionCustom: string;
+  characterSheet: string;
+  characterSheetCustom: string;
 }
 
-export const EMPTY_NIJI_KEYWORDS: NijiKeywords = {
-  appearance: "",
-  expression: "",
-  pose: "",
-  outfit: "",
-  background: "",
-  angle: "",
-  medium: "",
-};
+export interface BackgroundInput {
+  place: string;
+  placeCustom: string;
+  timeOfDay: string;
+  timeOfDayCustom: string;
+  mood: string;
+  moodCustom: string;
+  lighting: string;
+  lightingCustom: string;
+  colorPalette: string;
+  colorPaletteCustom: string;
+  depth: string;
+  depthCustom: string;
+  complexity: string;
+  complexityCustom: string;
+  layout: string;
+  layoutCustom: string;
+  viewingAngle: string;
+  viewingAngleCustom: string;
+  visibleRange: string;
+  visibleRangeCustom: string;
+}
 
-export const NIJI_KEYWORD_LABEL: Record<keyof NijiKeywords, string> = {
-  appearance: "외형",
-  expression: "표정",
-  pose: "포즈",
-  outfit: "의상",
-  background: "배경",
-  angle: "화각",
-  medium: "매체",
-};
+export interface AssetInput {
+  shape: string;
+  shapeCustom: string;
+  surface: string;
+  surfaceCustom: string;
+  dimension: string;
+  dimensionCustom: string;
+  decorationLevel: string;
+  decorationLevelCustom: string;
+  backgroundTreatment: string;
+  backgroundTreatmentCustom: string;
+  rules: string[];
+}
 
-export const NIJI_KEYWORD_PLACEHOLDER: Record<keyof NijiKeywords, string> = {
-  appearance: "e.g. teenage girl, long silver hair, emerald green eyes",
-  expression: "e.g. determined gaze, slight smile",
-  pose: "e.g. dynamic action pose, holding a katana",
-  outfit: "e.g. fantasy armor with gold trim",
-  background: "e.g. cherry blossom courtyard at dusk",
-  angle: "e.g. close-up portrait, three-quarter view",
-  medium: "e.g. anime style, cel shading, key visual",
-};
+export interface ReferenceImageInput {
+  src: string | null; // dataURL (없으면 null)
+  role: string; // REFERENCE_ROLE_OPTIONS의 value
+}
 
 export interface PromptInput {
-  request: string;
-  englishRequest?: string;
-  nijiKeywords?: NijiKeywords;
   workType: WorkType;
-  style: StyleType;
-  ratio: RatioType;
-  customRatio: string;
-  referenceRole: ReferenceRole;
-  hasReferenceImage: boolean;
-  forbid: {
-    text: boolean;
-    logo: boolean;
-    noise: boolean;
-    messyTexture: boolean;
-    sparkle: boolean;
-    overDetail: boolean;
-  };
+  koreanMemo: string;
+  englishSupplement: string;
+  style: string;
+  styleCustom: string;
+  aspectRatio: string;
+  aspectRatioCustom: string;
+  negativeChecks: string[];
+  negativeCustom: string;
+  character: CharacterInput;
+  background: BackgroundInput;
+  asset: AssetInput;
+  references: ReferenceImageInput[]; // 길이 3 고정
 }
 
-export interface PromptOutput {
-  koreanSummary: string;
-  gptImage: string;
-  nanoBanana: string;
-  midjourney: string;
-  revision: string;
+export const EMPTY_CHARACTER: CharacterInput = {
+  gender: "auto", genderCustom: "",
+  ageRange: "auto", ageRangeCustom: "",
+  bodyType: "auto", bodyTypeCustom: "",
+  hair: "auto", hairCustom: "",
+  outfit: "auto", outfitCustom: "",
+  pose: "auto", poseCustom: "",
+  visibleRange: "auto", visibleRangeCustom: "",
+  viewingAngle: "auto", viewingAngleCustom: "",
+  characterDirection: "auto", characterDirectionCustom: "",
+  characterSheet: "single", characterSheetCustom: "",
+};
+
+export const EMPTY_BACKGROUND: BackgroundInput = {
+  place: "auto", placeCustom: "",
+  timeOfDay: "auto", timeOfDayCustom: "",
+  mood: "auto", moodCustom: "",
+  lighting: "auto", lightingCustom: "",
+  colorPalette: "auto", colorPaletteCustom: "",
+  depth: "auto", depthCustom: "",
+  complexity: "auto", complexityCustom: "",
+  layout: "auto", layoutCustom: "",
+  viewingAngle: "auto", viewingAngleCustom: "",
+  visibleRange: "auto", visibleRangeCustom: "",
+};
+
+export const EMPTY_ASSET: AssetInput = {
+  shape: "auto", shapeCustom: "",
+  surface: "auto", surfaceCustom: "",
+  dimension: "auto", dimensionCustom: "",
+  decorationLevel: "auto", decorationLevelCustom: "",
+  backgroundTreatment: "auto", backgroundTreatmentCustom: "",
+  rules: [],
+};
+
+export const EMPTY_REFERENCES: ReferenceImageInput[] = [
+  { src: null, role: "style" },
+  { src: null, role: "style" },
+  { src: null, role: "style" },
+];
+
+export const DEFAULT_INPUT: PromptInput = {
+  workType: "character",
+  koreanMemo: "",
+  englishSupplement: "",
+  style: "auto",
+  styleCustom: "",
+  aspectRatio: "1:1",
+  aspectRatioCustom: "",
+  negativeChecks: ["text", "logo", "watermark", "distorted_hand"],
+  negativeCustom: "",
+  character: EMPTY_CHARACTER,
+  background: EMPTY_BACKGROUND,
+  asset: EMPTY_ASSET,
+  references: EMPTY_REFERENCES,
+};
+
+// ===== 비율 처리 =====
+
+function resolveAspectRatio(input: PromptInput): string {
+  const item = ASPECT_RATIO_OPTIONS.find((o) => o.value === input.aspectRatio);
+  if (!item) return "1:1";
+  if (item.en === "__custom__") {
+    const t = (input.aspectRatioCustom ?? "").trim();
+    return t || "1:1";
+  }
+  return item.en;
 }
 
-export type ModelKey =
-  | "gpt_image_2"
-  | "gpt_image_1_5"
-  | "gpt_image_1"
-  | "gpt_image_1_mini"
-  | "nano_banana"
-  | "nano_banana_2"
-  | "nano_banana_pro"
-  | "mj_v7"
-  | "mj_v8_alpha"
-  | "mj_v8_1_alpha"
-  | "niji_6"
-  | "niji_7";
-
-export const MODEL_LABEL: Record<ModelKey, string> = {
-  gpt_image_2: "GPT Image 2 (최신 권장)",
-  gpt_image_1_5: "GPT Image 1.5",
-  gpt_image_1: "GPT Image 1",
-  gpt_image_1_mini: "GPT Image 1-mini",
-  nano_banana: "Nano Banana",
-  nano_banana_2: "Nano Banana 2",
-  nano_banana_pro: "Nano Banana Pro",
-  mj_v7: "Midjourney V7",
-  mj_v8_alpha: "Midjourney V8 Alpha",
-  mj_v8_1_alpha: "Midjourney V8.1 Alpha",
-  niji_6: "Niji 6",
-  niji_7: "Niji 7",
-};
-
-export type ModelGroup = "gpt" | "nano" | "mj" | "niji";
-
-export const MODEL_GROUP: Record<ModelKey, ModelGroup> = {
-  gpt_image_2: "gpt",
-  gpt_image_1_5: "gpt",
-  gpt_image_1: "gpt",
-  gpt_image_1_mini: "gpt",
-  nano_banana: "nano",
-  nano_banana_2: "nano",
-  nano_banana_pro: "nano",
-  mj_v7: "mj",
-  mj_v8_alpha: "mj",
-  mj_v8_1_alpha: "mj",
-  niji_6: "niji",
-  niji_7: "niji",
-};
-
-export const WORK_TYPE_LABEL: Record<WorkType, string> = {
-  banner: "배너",
-  character: "캐릭터",
-  frame: "프레임",
-  background: "배경",
-  icon: "아이콘",
-};
-
-export const STYLE_LABEL: Record<StyleType, string> = {
-  casual_game: "캐주얼 게임",
-  realistic: "실사",
-  cartoon: "카툰",
-  "2_5d": "2.5D",
-  retro: "레트로",
-  neon: "네온",
-  premium_gold: "프리미엄 골드",
-  anime_manga: "애니/망가",
-  chibi: "치비",
-  pixel_art: "픽셀 아트",
-  concept_art: "콘셉트 아트",
-  flat_vector: "플랫/벡터",
-  cyberpunk: "사이버펑크",
-  dark_fantasy: "다크 판타지",
-  slot_premium: "슬롯 프리미엄",
-  disney_pixar: "디즈니/픽사",
-};
-
-export const REFERENCE_ROLE_LABEL: Record<ReferenceRole, string> = {
-  style: "스타일 참고",
-  composition: "구도 참고",
-  color: "색감 참고",
-  character: "캐릭터 유지",
-  material: "재질 참고",
-};
-
-const WORK_TYPE_EN: Record<WorkType, { sentence: string; keyword: string }> = {
-  banner: { sentence: "a promotional game banner illustration", keyword: "game banner, promotional artwork" },
-  character: { sentence: "a game character illustration", keyword: "game character, character art" },
-  frame: { sentence: "a decorative UI frame asset", keyword: "decorative UI frame, ornamental border" },
-  background: { sentence: "a background scene illustration", keyword: "background scene, environment art" },
-  icon: { sentence: "a single game icon asset", keyword: "game icon, single asset" },
-};
-
-const STYLE_EN: Record<StyleType, { sentence: string; keyword: string }> = {
-  casual_game: {
-    sentence: "rendered in a clean casual mobile game art style with vibrant flat colors, bouncy proportions, soft rim lighting, and friendly approachable shapes",
-    keyword: "casual mobile game art, vibrant flat colors, bouncy proportions, clean shapes, soft rim lighting",
-  },
-  realistic: {
-    sentence: "rendered in a photorealistic style with hyper-detailed textures, natural lighting, shallow depth of field, and 8k render quality",
-    keyword: "photorealistic, hyper-detailed textures, natural lighting, shallow depth of field, 8k render",
-  },
-  cartoon: {
-    sentence: "rendered in a western cartoon style with bold black outlines, flat saturated colors, and exaggerated expressions",
-    keyword: "western cartoon style, bold black outlines, flat saturated colors, exaggerated expressions",
-  },
-  "2_5d": {
-    sentence: "rendered in a 2.5D isometric game art style with painted hand-drawn textures, semi-3D look, and soft directional shadows",
-    keyword: "2.5D isometric game art, painted hand-drawn textures, semi-3D look, soft shadows",
-  },
-  retro: {
-    sentence: "rendered in a retro arcade aesthetic inspired by vintage 80s game art, with limited color palette and subtle scanline overlay",
-    keyword: "retro arcade aesthetic, vintage 80s game art, limited color palette, scanline overlay",
-  },
-  neon: {
-    sentence: "rendered with vivid neon glow lighting, vibrant magenta and cyan accents, glowing edges, and a dark contrasting background",
-    keyword: "neon glow lighting, vibrant magenta and cyan, glowing edges, dark contrasting background",
-  },
-  premium_gold: {
-    sentence: "rendered in a premium gold luxury aesthetic with polished metallic surfaces, elegant ornaments, and a soft golden glow",
-    keyword: "premium gold luxury, polished metallic surfaces, elegant ornaments, soft golden glow",
-  },
-  anime_manga: {
-    sentence: "rendered in a vibrant Japanese anime and manga style with cel shading, expressive eyes, clean linework, and dynamic posing",
-    keyword: "anime style, manga style, cel shading, expressive eyes, clean linework, vibrant colors",
-  },
-  chibi: {
-    sentence: "rendered as a chibi-style illustration with small body proportions, oversized head, large sparkling eyes, and cute pastel colors",
-    keyword: "chibi style, super-deformed, small body, big head, sparkling eyes, cute pastel colors",
-  },
-  pixel_art: {
-    sentence: "rendered as a crisp pixel art piece with hard pixel edges, a strictly limited palette, and 16-bit retro game aesthetics",
-    keyword: "pixel art, 16-bit, hard pixel edges, limited palette, retro game sprite",
-  },
-  concept_art: {
-    sentence: "rendered as a high-quality concept art painting with painterly brushstrokes, dynamic dramatic lighting, and cinematic composition",
-    keyword: "concept art, painterly brushstrokes, dynamic lighting, cinematic composition, key visual",
-  },
-  flat_vector: {
-    sentence: "rendered in a clean flat vector style with simple geometric shapes, bold solid colors, and minimal or no shading",
-    keyword: "flat vector style, geometric shapes, bold solid colors, minimal shading, clean crisp lines",
-  },
-  cyberpunk: {
-    sentence: "rendered in a cyberpunk style with a neon-lit dystopian cityscape, holographic signage, rain-soaked streets, and futuristic technology",
-    keyword: "cyberpunk, neon-lit dystopian, holographic signage, rain-soaked streets, futuristic technology",
-  },
-  dark_fantasy: {
-    sentence: "rendered in a dark fantasy style with a moody gothic atmosphere, dramatic shadows, ominous lighting, and weathered medieval details",
-    keyword: "dark fantasy, gothic atmosphere, moody, dramatic shadows, ominous lighting, weathered medieval",
-  },
-  slot_premium: {
-    sentence: "rendered as a premium slot machine asset with glossy ornate frames, sparkling jewels, gold and gem accents, and high-polish casino game UI feel",
-    keyword: "slot machine asset, glossy ornate frame, sparkling jewels, gold and gem accents, casino UI polish",
-  },
-  disney_pixar: {
-    sentence: "rendered in a polished modern stylized 3D family animation style with expressive cartoon characters, large eyes, soft cinematic lighting, and warm color grading",
-    keyword: "modern stylized 3D animation, expressive cartoon characters, large eyes, soft cinematic lighting, warm color grading",
-  },
-};
-
-const REFERENCE_ROLE_EN: Record<ReferenceRole, string> = {
-  style: "match the overall style and rendering of the reference image",
-  composition: "follow the composition and layout of the reference image",
-  color: "match the color palette and tonal mood of the reference image",
-  character: "preserve the character identity and key features from the reference image",
-  material: "match the material qualities and surface textures of the reference image",
-};
-
-// === 하이라이트 토큰 ===
-const B = "[[B]]";
-const E = "[[/B]]";
-function hi(text: string): string {
-  if (!text) return text;
-  return `${B}${text}${E}`;
-}
-
-export function stripHighlight(s: string): string {
-  return s.replace(/\[\[\/?B\]\]/g, "");
-}
-
-// 복사용: 결과 본문 끝에 붙는 `// model: ...` 같은 안내 주석 라인을 제거.
-// 빈 줄까지 포함해서 정리하므로 클립보드에는 실제 프롬프트만 들어감.
-export function stripModelComment(s: string): string {
-  return s
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith("//"))
-    .join("\n")
-    .replace(/\n+$/g, "");
-}
-
-function resolveRatio(input: PromptInput): string {
-  if (input.ratio === "custom") return input.customRatio.trim() || "1:1";
-  return input.ratio;
-}
-
-function ratioForGptSentence(input: PromptInput): string {
-  const r = resolveRatio(input);
+function aspectRatioForGpt(input: PromptInput): string {
+  const r = resolveAspectRatio(input);
   if (/^\d+x\d+$/i.test(r)) return `${r} pixels`;
   return `${r} aspect ratio`;
-}
-
-function ratioForMidjourney(input: PromptInput): string {
-  const r = resolveRatio(input);
-  if (r === "1000x600") return "--ar 5:3";
-  const pxMatch = r.match(/^(\d+)x(\d+)$/i);
-  if (pxMatch) {
-    const w = parseInt(pxMatch[1], 10);
-    const h = parseInt(pxMatch[2], 10);
-    const g = gcd(w, h);
-    return `--ar ${w / g}:${h / g}`;
-  }
-  return `--ar ${r}`;
 }
 
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
 
-function forbidToEnglish(forbid: PromptInput["forbid"]): string[] {
-  const list: string[] = [];
-  if (forbid.text) list.push("no text");
-  if (forbid.logo) list.push("no logo");
-  if (forbid.noise) list.push("no noise");
-  if (forbid.messyTexture) list.push("no messy or dirty textures");
-  if (forbid.sparkle) list.push("no sparkles or glitter");
-  if (forbid.overDetail) list.push("avoid excessive detail, keep it clean");
-  return list;
-}
-
-function forbidToKorean(forbid: PromptInput["forbid"]): string[] {
-  const list: string[] = [];
-  if (forbid.text) list.push("텍스트 금지");
-  if (forbid.logo) list.push("로고 금지");
-  if (forbid.noise) list.push("노이즈 금지");
-  if (forbid.messyTexture) list.push("지저분한 텍스처 금지");
-  if (forbid.sparkle) list.push("반짝이 금지");
-  if (forbid.overDetail) list.push("과한 디테일 금지");
-  return list;
-}
-
-function buildKoreanSummary(input: PromptInput): string {
-  const lines: string[] = [];
-  lines.push(`작업 유형: ${WORK_TYPE_LABEL[input.workType]}`);
-  lines.push(`스타일: ${STYLE_LABEL[input.style]}`);
-  lines.push(`비율: ${resolveRatio(input)}`);
-  if (input.hasReferenceImage) {
-    lines.push(`참고 이미지 역할: ${REFERENCE_ROLE_LABEL[input.referenceRole]}`);
+function aspectRatioForMidjourney(input: PromptInput): string {
+  const r = resolveAspectRatio(input);
+  if (r === "1000x600") return "--ar 5:3";
+  const px = r.match(/^(\d+)x(\d+)$/i);
+  if (px) {
+    const w = parseInt(px[1], 10);
+    const h = parseInt(px[2], 10);
+    if (!w || !h) return "--ar 1:1";
+    const g = gcd(w, h);
+    return `--ar ${w / g}:${h / g}`;
   }
-  lines.push(`요청 내용: ${hi(input.request.trim() || "(미입력)")}`);
-  const forbids = forbidToKorean(input.forbid);
-  if (forbids.length > 0) lines.push(`금지 요소: ${forbids.join(", ")}`);
+  if (/^\d+:\d+$/.test(r)) return `--ar ${r}`;
+  return "--ar 1:1";
+}
+
+// ===== 영어 토큰 수집 =====
+
+function pushEn(out: string[], options: OptionItem[], value: string, customText: string = "") {
+  const en = resolveOptionEn(options, value, customText);
+  if (en) out.push(en);
+}
+
+function pushFromTwoLists(
+  out: string[],
+  primary: OptionItem[],
+  more: OptionItem[],
+  value: string,
+  customText: string = ""
+) {
+  // 더보기 항목이 선택된 경우도 처리
+  const item = primary.find((o) => o.value === value) || more.find((o) => o.value === value);
+  if (!item) return;
+  if (item.en === "__custom__") {
+    const t = (customText ?? "").trim();
+    if (!t || containsKorean(t)) return;
+    out.push(t);
+    return;
+  }
+  if (item.en) out.push(item.en);
+}
+
+function collectStyle(input: PromptInput): string {
+  return resolveOptionEn(STYLE_OPTIONS, input.style, input.styleCustom);
+}
+
+function collectCharacterTokens(c: CharacterInput): string[] {
+  const out: string[] = [];
+  pushEn(out, GENDER_OPTIONS, c.gender, c.genderCustom);
+  pushEn(out, AGE_OPTIONS, c.ageRange, c.ageRangeCustom);
+  pushEn(out, BODY_OPTIONS, c.bodyType, c.bodyTypeCustom);
+  pushFromTwoLists(out, HAIR_OPTIONS, HAIR_MORE_OPTIONS, c.hair, c.hairCustom);
+  pushFromTwoLists(out, OUTFIT_OPTIONS, OUTFIT_MORE_OPTIONS, c.outfit, c.outfitCustom);
+  pushFromTwoLists(out, POSE_OPTIONS, POSE_MORE_OPTIONS, c.pose, c.poseCustom);
+  pushFromTwoLists(out, VISIBLE_RANGE_OPTIONS, VISIBLE_RANGE_MORE_OPTIONS, c.visibleRange, c.visibleRangeCustom);
+  pushFromTwoLists(out, VIEW_ANGLE_OPTIONS, VIEW_ANGLE_MORE_OPTIONS, c.viewingAngle, c.viewingAngleCustom);
+  pushFromTwoLists(out, CHARACTER_DIRECTION_OPTIONS, CHARACTER_DIRECTION_MORE_OPTIONS, c.characterDirection, c.characterDirectionCustom);
+  pushFromTwoLists(out, CHARACTER_SHEET_OPTIONS, CHARACTER_SHEET_MORE_OPTIONS, c.characterSheet, c.characterSheetCustom);
+
+  // 캐릭터 시트가 single이 아니면 시트용 표준 키워드 추가
+  if (c.characterSheet && c.characterSheet !== "single" && c.characterSheet !== "auto") {
+    for (const kw of CHARACTER_SHEET_EXTRA_KEYWORDS) {
+      if (!out.includes(kw)) out.push(kw);
+    }
+  }
+  return out;
+}
+
+function collectBackgroundTokens(b: BackgroundInput): string[] {
+  const out: string[] = [];
+  pushFromTwoLists(out, PLACE_OPTIONS, PLACE_MORE_OPTIONS, b.place, b.placeCustom);
+  pushEn(out, TIME_OF_DAY_OPTIONS, b.timeOfDay, b.timeOfDayCustom);
+  pushEn(out, MOOD_OPTIONS, b.mood, b.moodCustom);
+  pushEn(out, LIGHTING_OPTIONS, b.lighting, b.lightingCustom);
+  pushEn(out, COLOR_PALETTE_OPTIONS, b.colorPalette, b.colorPaletteCustom);
+  pushEn(out, DEPTH_OPTIONS, b.depth, b.depthCustom);
+  pushEn(out, COMPLEXITY_OPTIONS, b.complexity, b.complexityCustom);
+  pushEn(out, LAYOUT_OPTIONS, b.layout, b.layoutCustom);
+  pushEn(out, BG_VIEW_ANGLE_OPTIONS, b.viewingAngle, b.viewingAngleCustom);
+  pushEn(out, BG_VISIBLE_RANGE_OPTIONS, b.visibleRange, b.visibleRangeCustom);
+  return out;
+}
+
+function collectAssetTokens(a: AssetInput, workType: WorkType): string[] {
+  const out: string[] = [];
+  pushEn(out, SHAPE_OPTIONS, a.shape, a.shapeCustom);
+  pushEn(out, SURFACE_OPTIONS, a.surface, a.surfaceCustom);
+  pushEn(out, DIMENSION_OPTIONS, a.dimension, a.dimensionCustom);
+  pushEn(out, DECORATION_LEVEL_OPTIONS, a.decorationLevel, a.decorationLevelCustom);
+  pushEn(out, BG_TREATMENT_OPTIONS, a.backgroundTreatment, a.backgroundTreatmentCustom);
+  // 체크박스 룰
+  for (const r of a.rules) {
+    const item = ASSET_RULES_OPTIONS.find((o) => o.value === r);
+    if (item && item.en) out.push(item.en);
+  }
+  // 작업유형별 추가 강조
+  const extras = ASSET_TYPE_EXTRA[workType] ?? [];
+  for (const k of extras) if (!out.includes(k)) out.push(k);
+  return out;
+}
+
+function collectNegatives(input: PromptInput): string[] {
+  const out: string[] = [];
+  for (const v of input.negativeChecks) {
+    const item = NEGATIVE_OPTIONS.find((o) => o.value === v);
+    if (item && item.en) out.push(item.en);
+  }
+  const t = (input.negativeCustom ?? "").trim();
+  if (t && !containsKorean(t)) out.push(`no ${t}`);
+  return out;
+}
+
+function collectMainTokens(input: PromptInput): string[] {
+  switch (input.workType) {
+    case "character":
+      return collectCharacterTokens(input.character);
+    case "background":
+      return collectBackgroundTokens(input.background);
+    case "frame":
+    case "icon":
+    case "object":
+      return collectAssetTokens(input.asset, input.workType);
+  }
+}
+
+function activeReferences(input: PromptInput): ReferenceImageInput[] {
+  return input.references.filter((r) => r.src);
+}
+
+function englishSupplementClean(input: PromptInput): string {
+  const t = (input.englishSupplement ?? "").trim();
+  if (!t) return "";
+  // 한글이 섞이면 한글 부분은 제외 (단어 단위로 잘라 한글 단어 제거)
+  if (!containsKorean(t)) return t;
+  // 한글이 섞였다면 안전하게 통째로 제외
+  return "";
+}
+
+// ===== 모델별 빌더 =====
+
+function buildGptImage(input: PromptInput): string {
+  const work = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en
+    ?? "an illustration";
+  const style = collectStyle(input);
+  const main = collectMainTokens(input);
+  const negatives = collectNegatives(input);
+  const eng = englishSupplementClean(input);
+  const ratio = aspectRatioForGpt(input);
+  const refs = activeReferences(input);
+
+  const sentences: string[] = [];
+  sentences.push(`Create ${work}.`);
+
+  // 주요 묘사 (캐릭터/배경/에셋 토큰)
+  if (main.length > 0) {
+    sentences.push(`Key details: ${main.join(", ")}.`);
+  }
+
+  // 영어 보충 입력
+  if (eng) {
+    sentences.push(`Additional direction from the artist: ${eng}.`);
+  }
+
+  // 스타일
+  if (style) {
+    sentences.push(`Render it in ${style}.`);
+  }
+
+  // 비율
+  sentences.push(`Compose the image at ${ratio} with a clear focal point and balanced layout.`);
+
+  // 참고 이미지
+  for (const r of refs) {
+    const sentence = REFERENCE_ROLE_SENTENCE[r.role] ?? REFERENCE_ROLE_SENTENCE.style;
+    sentences.push(sentence);
+  }
+
+  // 금지 요소
+  if (negatives.length > 0) {
+    sentences.push(`Important constraints: ${negatives.join(", ")}.`);
+  }
+
+  sentences.push("Keep the result production-ready for game art use, with clean edges and consistent lighting.");
+  return sentences.join(" ");
+}
+
+function buildNanoBanana(input: PromptInput, model: ModelKey): string {
+  const work = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType)?.en
+    ?? "an illustration";
+  const style = collectStyle(input);
+  const main = collectMainTokens(input);
+  const negatives = collectNegatives(input);
+  const eng = englishSupplementClean(input);
+  const ratio = resolveAspectRatio(input);
+  const refs = activeReferences(input);
+
+  const lines: string[] = [];
+
+  // Goal
+  lines.push("Goal:");
+  lines.push(`- Create ${work}.`);
+
+  // Subject (main details + 영어 보충)
+  lines.push("");
+  lines.push("Subject:");
+  if (main.length > 0) {
+    for (const t of main) lines.push(`- ${t}`);
+  } else {
+    lines.push("- (subject not specified, infer from artist direction)");
+  }
+  if (eng) lines.push(`- ${eng}`);
+
+  // Style
+  if (style) {
+    lines.push("");
+    lines.push("Style:");
+    lines.push(`- ${style}`);
+  }
+
+  // Composition
+  lines.push("");
+  lines.push("Composition:");
+  lines.push(`- aspect ratio ${ratio}`);
+  lines.push("- clean composition, clear focal point, balanced layout");
+
+  // Reference
+  if (refs.length > 0) {
+    lines.push("");
+    lines.push("Reference:");
+    for (const r of refs) {
+      const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.en ?? r.role;
+      const sentence = REFERENCE_ROLE_SENTENCE[r.role] ?? "";
+      lines.push(`- (${label}) ${sentence.replace(/^Use the attached reference image /, "")}`);
+    }
+  }
+
+  // Quality
+  lines.push("");
+  lines.push("Quality:");
+  if (model === "nano_banana_pro") {
+    lines.push("- target resolution: 4K, professional print-ready");
+    lines.push("- multilingual text rendering enabled");
+  } else if (model === "nano_banana_2") {
+    lines.push("- target resolution: 2K or higher");
+    lines.push("- precise aspect ratio");
+  } else {
+    lines.push("- commercial game asset quality, clean readable design");
+  }
+
+  // Avoid
+  lines.push("");
+  lines.push("Avoid:");
+  if (negatives.length > 0) {
+    for (const n of negatives) lines.push(`- ${n}`);
+  } else {
+    lines.push("- anything that distracts from the main subject");
+  }
+
   return lines.join("\n");
 }
 
-function buildGptImage(input: PromptInput): string {
-  const work = WORK_TYPE_EN[input.workType].sentence;
-  const style = STYLE_EN[input.style].sentence;
-  const ratio = ratioForGptSentence(input);
-  const forbids = forbidToEnglish(input.forbid);
-  const koRequest = input.request.trim();
-  const enRequest = (input.englishRequest ?? "").trim();
-
-  const parts: string[] = [];
-  parts.push(`Create ${work}.`);
-  if (input.hasReferenceImage) {
-    parts.push(`Use the attached reference image to ${REFERENCE_ROLE_EN[input.referenceRole]}.`);
-  }
-  if (enRequest && koRequest) {
-    parts.push(`The concept from the designer is: "${hi(enRequest)}".`);
-    parts.push(`Original Korean brief for nuance: "${hi(koRequest)}".`);
-  } else if (koRequest) {
-    parts.push(`The concept from the designer is: "${hi(koRequest)}".`);
-  }
-  parts.push(`It should be ${style}.`);
-  parts.push(`Compose the image at ${ratio}, with a clear focal point and balanced composition.`);
-  if (forbids.length > 0) parts.push(`Important constraints: ${forbids.join(", ")}.`);
-  parts.push("Keep the result production-ready for game art use, with clean edges and consistent lighting.");
-  return parts.join(" ");
-}
-
-function buildNanoBanana(
-  input: PromptInput,
-  model: "nano_banana" | "nano_banana_2" | "nano_banana_pro" = "nano_banana"
-): string {
-  const koRequest = input.request.trim();
-  const enRequest = (input.englishRequest ?? "").trim();
-  const styleKeyword = STYLE_EN[input.style].keyword;
-  const workKeyword = WORK_TYPE_EN[input.workType].keyword;
-  const ratio = resolveRatio(input);
-
-  const keepLines = [
-    workKeyword,
-    styleKeyword,
-    `aspect ratio ${ratio}`,
-    "clean composition, balanced lighting",
-  ];
-  if (input.hasReferenceImage) {
-    keepLines.unshift(`from the reference image: ${REFERENCE_ROLE_EN[input.referenceRole]}`);
-  }
-  if (model === "nano_banana_2") {
-    keepLines.push("target resolution: 2K (or higher)");
-    keepLines.push(`aspect ratio precise: ${ratio}`);
-  } else if (model === "nano_banana_pro") {
-    keepLines.push("target resolution: 4K, professional print-ready");
-    keepLines.push("text rendering: enabled, multilingual");
-    if (input.hasReferenceImage) {
-      keepLines.push("maintain identity across all reference images, up to 5 people");
-    }
-  }
-
-  const changeLines: string[] = [];
-  if (enRequest) {
-    changeLines.push(`apply this concept: ${hi(enRequest)}`);
-    if (koRequest) changeLines.push(`(original Korean: ${hi(koRequest)})`);
-  } else if (koRequest) {
-    changeLines.push(`apply this concept: ${hi(koRequest)}`);
-  }
-  changeLines.push(`adjust visual mood to match ${STYLE_LABEL[input.style]} style`);
-
-  const removeLinesRaw = forbidToEnglish(input.forbid);
-  const removeLines =
-    removeLinesRaw.length === 0
-      ? ["anything that distracts from the main subject"]
-      : removeLinesRaw;
-
-  const block = (label: string, lines: string[]) =>
-    `${label}:\n` + lines.map((l) => `- ${l}`).join("\n");
-
-  return [
-    block("Keep", keepLines),
-    block("Change", changeLines),
-    block("Remove", removeLines),
-  ].join("\n\n");
-}
-
-function buildMidjourney(
-  input: PromptInput,
-  model: "mj_v7" | "mj_v8_alpha" | "mj_v8_1_alpha" = "mj_v7"
-): string {
-  const koRequest = input.request.trim();
-  const enRequest = (input.englishRequest ?? "").trim();
-  const userRequest = enRequest || koRequest;
-  const workKeyword = WORK_TYPE_EN[input.workType].keyword;
-  const styleKeyword = STYLE_EN[input.style].keyword;
-  const ar = ratioForMidjourney(input);
+function buildMidjourney(input: PromptInput, model: ModelKey): string {
+  const workKw = WORK_TYPE_KEYWORD[input.workType] ?? "illustration";
+  const style = collectStyle(input);
+  const main = collectMainTokens(input);
+  const negatives = collectNegatives(input);
+  const eng = englishSupplementClean(input);
+  const ar = aspectRatioForMidjourney(input);
+  const refs = activeReferences(input);
 
   const keywords: string[] = [];
-  if (userRequest) keywords.push(hi(userRequest));
-  keywords.push(workKeyword);
-  keywords.push(styleKeyword);
-  keywords.push("high quality", "clean composition");
+  keywords.push(workKw);
+  for (const t of main) keywords.push(t);
+  if (eng) keywords.push(eng);
+  if (style) keywords.push(style);
+  keywords.push("clean composition", "polished design");
 
-  const negatives = forbidToEnglish(input.forbid);
-  let base = keywords.join(", ");
-  if (negatives.length > 0) base += `, ${negatives.join(", ")}`;
-
-  const refHint = input.hasReferenceImage
-    ? ` --oref [reference_image_url] --ow 100`
-    : "";
-
-  let suffix = "";
-  let comment = "";
-  if (model === "mj_v8_alpha") {
-    suffix = ` --hd`;
-    comment = "\n// generated for alpha.midjourney.com (V8 Alpha)";
-  } else if (model === "mj_v8_1_alpha") {
-    comment = "\n// generated for alpha.midjourney.com (V8.1 Alpha, default HD)";
+  // 참고 이미지 파라미터
+  const refParams: string[] = [];
+  for (const r of refs) {
+    const p = REFERENCE_ROLE_MJ_PARAM[r.role] ?? REFERENCE_ROLE_MJ_PARAM.style;
+    refParams.push(p);
   }
 
-  return `${base} ${ar}${refHint}${suffix}${comment}`;
+  // V8.x 추가 옵션
+  let extra = "";
+  if (model === "mj_v8_alpha") extra = " --hd";
+
+  const base = keywords.join(", ");
+  const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
+  const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
+  return `${base} ${ar}${noPart}${refPart}${extra}`.replace(/\s+/g, " ").trim();
 }
 
-// v0.5 정정: Niji 빌더는 nijiKeywords 7항목이 하나라도 채워져 있으면 그것을
-// 외형/표정/포즈/의상/배경/화각/매체 순서로 사용. 모두 비어 있으면 영어
-// textarea를 폴백으로 사용 (v0.4 동작).
-function buildNiji(
-  input: PromptInput,
-  model: "niji_6" | "niji_7" = "niji_7"
-): string {
-  const koRequest = input.request.trim();
-  const enRequest = (input.englishRequest ?? "").trim();
-  const workKeyword = WORK_TYPE_EN[input.workType].keyword;
-  const styleKeyword = STYLE_EN[input.style].keyword;
-  const ar = ratioForMidjourney(input);
-
-  const niji = input.nijiKeywords;
-  const nijiOrder: (keyof NijiKeywords)[] = [
-    "appearance",
-    "expression",
-    "pose",
-    "outfit",
-    "background",
-    "angle",
-    "medium",
-  ];
-  const nijiFilled =
-    niji != null &&
-    nijiOrder.some((k) => (niji[k] ?? "").trim().length > 0);
+function buildNiji(input: PromptInput, model: ModelKey): string {
+  const workKw = WORK_TYPE_KEYWORD[input.workType] ?? "illustration";
+  const style = collectStyle(input);
+  const main = collectMainTokens(input);
+  const negatives = collectNegatives(input);
+  const eng = englishSupplementClean(input);
+  const ar = aspectRatioForMidjourney(input);
+  const refs = activeReferences(input);
 
   const keywords: string[] = [];
+  keywords.push("anime style");
+  keywords.push(workKw);
+  for (const t of main) keywords.push(t);
+  if (eng) keywords.push(eng);
+  if (style) keywords.push(style);
+  keywords.push("clean character silhouette", "polished anime game illustration");
 
-  if (nijiFilled && niji) {
-    // Niji 사양 권장 순서대로 채워진 항목만 추가 (8번은 6/7번이 아니므로 하이라이트 X)
-    for (const k of nijiOrder) {
-      const v = (niji[k] ?? "").trim();
-      if (v) keywords.push(v);
-    }
-  } else {
-    // 폴백: 영어 textarea(7번) 또는 한글 요청(6번) 사용 → 하이라이트 O
-    const userRequest = enRequest || koRequest;
-    if (userRequest) keywords.push(hi(userRequest));
+  const refParams: string[] = [];
+  for (const r of refs) {
+    const p = REFERENCE_ROLE_NIJI_PARAM[r.role] ?? REFERENCE_ROLE_NIJI_PARAM.style;
+    refParams.push(p);
   }
-
-  // 작업유형 + 스타일 + 기본 매체 키워드 항상 추가
-  keywords.push(workKeyword);
-  keywords.push(styleKeyword);
-  keywords.push("anime style", "key visual", "clean composition");
-
-  const negatives = forbidToEnglish(input.forbid);
-  let base = keywords.join(", ");
-  if (negatives.length > 0) base += `, ${negatives.join(", ")}`;
-
-  const refHint = input.hasReferenceImage
-    ? ` --cref [reference_image_url] --cw 100`
-    : "";
 
   const nijiVersion = model === "niji_6" ? "--niji 6" : "--niji 7";
-  return `${base} ${ar} ${nijiVersion}${refHint}`;
+  const base = keywords.join(", ");
+  const noPart = negatives.length > 0 ? ` --no ${negatives.map((n) => n.replace(/^no /, "").replace(/^avoid /, "")).join(", ")}` : "";
+  const refPart = refParams.length > 0 ? " " + refParams.join(" ") : "";
+  return `${base} ${nijiVersion} ${ar}${noPart}${refPart}`.replace(/\s+/g, " ").trim();
 }
 
-function appendModelComment(body: string, model: ModelKey): string {
-  const idMap: Record<ModelKey, string> = {
-    gpt_image_2: "gpt-image-2",
-    gpt_image_1_5: "gpt-image-1.5",
-    gpt_image_1: "gpt-image-1",
-    gpt_image_1_mini: "gpt-image-1-mini",
-    nano_banana: "gemini-2.5-flash-image",
-    nano_banana_2: "gemini-3.1-flash-image-preview",
-    nano_banana_pro: "gemini-3-pro-image-preview",
-    mj_v7: "midjourney-v7",
-    mj_v8_alpha: "midjourney-v8-alpha",
-    mj_v8_1_alpha: "midjourney-v8.1-alpha",
-    niji_6: "niji-6",
-    niji_7: "niji-7",
+function buildRevision(input: PromptInput): string {
+  const negatives = collectNegatives(input);
+  const lines: string[] = [];
+  lines.push("Keep:");
+  lines.push("- The main subject, overall style, and core composition.");
+  lines.push("");
+  lines.push("Change:");
+  lines.push("- Improve the weak or unsatisfactory parts of the image.");
+  lines.push("- Make the image cleaner, more readable, and more polished.");
+  lines.push("");
+  lines.push("Remove:");
+  if (negatives.length > 0) {
+    for (const n of negatives) lines.push(`- ${n.replace(/^no /, "")}`);
+  } else {
+    lines.push("- text");
+    lines.push("- logos");
+    lines.push("- visual noise");
+    lines.push("- messy textures");
+    lines.push("- distorted hands");
+    lines.push("- unwanted extra objects");
+  }
+  lines.push("");
+  lines.push("Do not change:");
+  lines.push("- Main subject");
+  lines.push("- Core theme");
+  lines.push("- Important composition");
+  lines.push("- Aspect ratio");
+  return lines.join("\n");
+}
+
+// ===== 외부 API =====
+
+export interface SummaryRow {
+  label: string;
+  value: string;
+}
+
+export interface SummaryTags {
+  label: string;
+  tags: string[];
+}
+
+export interface PromptSummary {
+  rows: SummaryRow[];
+  negative: SummaryTags;
+  references: SummaryTags;
+}
+
+export function buildSummary(input: PromptInput): PromptSummary {
+  const rows: SummaryRow[] = [];
+  const wt = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType);
+  if (wt) rows.push({ label: "작업 유형", value: wt.label });
+
+  const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
+  if (styleLabel) rows.push({ label: "스타일", value: styleLabel });
+
+  const ratio = resolveAspectRatio(input);
+  rows.push({ label: "비율", value: ratio });
+
+  if (input.workType === "character") {
+    const c = input.character;
+    const gender = resolveOptionLabel(GENDER_OPTIONS, c.gender, c.genderCustom);
+    const age = resolveOptionLabel(AGE_OPTIONS, c.ageRange, c.ageRangeCustom);
+    const ga = [gender, age].filter(Boolean).join(" / ");
+    if (ga) rows.push({ label: "성별 / 나이대", value: ga });
+
+    const body = resolveOptionLabel(BODY_OPTIONS, c.bodyType, c.bodyTypeCustom);
+    if (body) rows.push({ label: "체형", value: body });
+
+    const hair = resolveOneFromTwo(HAIR_OPTIONS, HAIR_MORE_OPTIONS, c.hair, c.hairCustom);
+    if (hair) rows.push({ label: "머리", value: hair });
+
+    const outfit = resolveOneFromTwo(OUTFIT_OPTIONS, OUTFIT_MORE_OPTIONS, c.outfit, c.outfitCustom);
+    if (outfit) rows.push({ label: "의상", value: outfit });
+
+    const pose = resolveOneFromTwo(POSE_OPTIONS, POSE_MORE_OPTIONS, c.pose, c.poseCustom);
+    if (pose) rows.push({ label: "포즈", value: pose });
+
+    const vr = resolveOneFromTwo(VISIBLE_RANGE_OPTIONS, VISIBLE_RANGE_MORE_OPTIONS, c.visibleRange, c.visibleRangeCustom);
+    if (vr) rows.push({ label: "보이는 범위", value: vr });
+
+    const va = resolveOneFromTwo(VIEW_ANGLE_OPTIONS, VIEW_ANGLE_MORE_OPTIONS, c.viewingAngle, c.viewingAngleCustom);
+    if (va) rows.push({ label: "보는 각도", value: va });
+
+    const cd = resolveOneFromTwo(CHARACTER_DIRECTION_OPTIONS, CHARACTER_DIRECTION_MORE_OPTIONS, c.characterDirection, c.characterDirectionCustom);
+    if (cd) rows.push({ label: "캐릭터 방향", value: cd });
+
+    const cs = resolveOneFromTwo(CHARACTER_SHEET_OPTIONS, CHARACTER_SHEET_MORE_OPTIONS, c.characterSheet, c.characterSheetCustom);
+    if (cs) rows.push({ label: "캐릭터 시트", value: cs });
+  }
+
+  if (input.workType === "background") {
+    const b = input.background;
+    const place = resolveOneFromTwo(PLACE_OPTIONS, PLACE_MORE_OPTIONS, b.place, b.placeCustom);
+    if (place) rows.push({ label: "장소", value: place });
+
+    const time = resolveOptionLabel(TIME_OF_DAY_OPTIONS, b.timeOfDay, b.timeOfDayCustom);
+    if (time) rows.push({ label: "시간대", value: time });
+
+    const mood = resolveOptionLabel(MOOD_OPTIONS, b.mood, b.moodCustom);
+    if (mood) rows.push({ label: "분위기", value: mood });
+
+    const light = resolveOptionLabel(LIGHTING_OPTIONS, b.lighting, b.lightingCustom);
+    if (light) rows.push({ label: "빛 느낌", value: light });
+
+    const color = resolveOptionLabel(COLOR_PALETTE_OPTIONS, b.colorPalette, b.colorPaletteCustom);
+    if (color) rows.push({ label: "색감", value: color });
+
+    const depth = resolveOptionLabel(DEPTH_OPTIONS, b.depth, b.depthCustom);
+    if (depth) rows.push({ label: "깊이감", value: depth });
+
+    const complexity = resolveOptionLabel(COMPLEXITY_OPTIONS, b.complexity, b.complexityCustom);
+    if (complexity) rows.push({ label: "배경 복잡도", value: complexity });
+
+    const layout = resolveOptionLabel(LAYOUT_OPTIONS, b.layout, b.layoutCustom);
+    if (layout) rows.push({ label: "여백 / 배치", value: layout });
+
+    const va = resolveOptionLabel(BG_VIEW_ANGLE_OPTIONS, b.viewingAngle, b.viewingAngleCustom);
+    if (va) rows.push({ label: "보는 각도", value: va });
+
+    const vr = resolveOptionLabel(BG_VISIBLE_RANGE_OPTIONS, b.visibleRange, b.visibleRangeCustom);
+    if (vr) rows.push({ label: "보이는 범위", value: vr });
+  }
+
+  if (input.workType === "frame" || input.workType === "icon" || input.workType === "object") {
+    const a = input.asset;
+    const shape = resolveOptionLabel(SHAPE_OPTIONS, a.shape, a.shapeCustom);
+    if (shape) rows.push({ label: "형태", value: shape });
+
+    const surface = resolveOptionLabel(SURFACE_OPTIONS, a.surface, a.surfaceCustom);
+    if (surface) rows.push({ label: "표면 느낌", value: surface });
+
+    const dim = resolveOptionLabel(DIMENSION_OPTIONS, a.dimension, a.dimensionCustom);
+    if (dim) rows.push({ label: "입체감", value: dim });
+
+    const dec = resolveOptionLabel(DECORATION_LEVEL_OPTIONS, a.decorationLevel, a.decorationLevelCustom);
+    if (dec) rows.push({ label: "장식 정도", value: dec });
+
+    const bgT = resolveOptionLabel(BG_TREATMENT_OPTIONS, a.backgroundTreatment, a.backgroundTreatmentCustom);
+    if (bgT) rows.push({ label: "배경 처리", value: bgT });
+
+    if (a.rules.length > 0) {
+      const labels = a.rules
+        .map((r) => ASSET_RULES_OPTIONS.find((o) => o.value === r)?.label)
+        .filter((x): x is string => !!x);
+      if (labels.length > 0) rows.push({ label: "에셋 조건", value: labels.join(", ") });
+    }
+  }
+
+  const eng = englishSupplementClean(input);
+  if (eng) rows.push({ label: "영어 보충", value: eng });
+
+  const negTags = input.negativeChecks
+    .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
+    .filter((x): x is string => !!x);
+  const negCustom = (input.negativeCustom ?? "").trim();
+  if (negCustom) negTags.push(negCustom);
+
+  const refTags: string[] = [];
+  input.references.forEach((r, i) => {
+    if (!r.src) return;
+    const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? r.role;
+    refTags.push(`이미지 ${i + 1}: ${label}`);
+  });
+
+  return {
+    rows,
+    negative: { label: "빼고 싶은 것", tags: negTags },
+    references: { label: "참고 이미지", tags: refTags },
   };
-  return `${body}\n\n// model: ${idMap[model]}`;
+}
+
+function resolveOneFromTwo(
+  primary: OptionItem[],
+  more: OptionItem[],
+  value: string,
+  customText: string
+): string {
+  const item = primary.find((o) => o.value === value) || more.find((o) => o.value === value);
+  if (!item) return "";
+  if (item.en === "__custom__") {
+    const t = (customText ?? "").trim();
+    return t || "직접 입력";
+  }
+  if (item.en === "") return "";
+  return item.label;
 }
 
 export function buildPromptFor(model: ModelKey, input: PromptInput): string {
@@ -550,11 +738,11 @@ export function buildPromptFor(model: ModelKey, input: PromptInput): string {
     case "gpt_image_1_5":
     case "gpt_image_1":
     case "gpt_image_1_mini":
-      return appendModelComment(buildGptImage(input), model);
+      return buildGptImage(input);
     case "nano_banana":
     case "nano_banana_2":
     case "nano_banana_pro":
-      return appendModelComment(buildNanoBanana(input, model), model);
+      return buildNanoBanana(input, model);
     case "mj_v7":
     case "mj_v8_alpha":
     case "mj_v8_1_alpha":
@@ -565,54 +753,10 @@ export function buildPromptFor(model: ModelKey, input: PromptInput): string {
   }
 }
 
-function buildRevision(input: PromptInput): string {
-  const koRequest = input.request.trim();
-  const enRequest = (input.englishRequest ?? "").trim();
-  const workKeyword = WORK_TYPE_EN[input.workType].keyword;
-  const styleKeyword = STYLE_EN[input.style].keyword;
-  const ratio = resolveRatio(input);
-  const forbids = forbidToEnglish(input.forbid);
-
-  const lines: string[] = [];
-  lines.push("Revise the previous image result.");
-  lines.push("Make the image cleaner and easier to read. Reduce messy texture, noise, clutter, and excessive details.");
-  lines.push("");
-  lines.push("Original brief:");
-  lines.push(`- Work type: ${workKeyword}`);
-  lines.push(`- Style: ${styleKeyword}`);
-  lines.push(`- Aspect ratio: ${ratio}`);
-  if (enRequest) {
-    lines.push(`- Concept: "${hi(enRequest)}"`);
-    if (koRequest) lines.push(`- Original Korean: "${hi(koRequest)}"`);
-  } else if (koRequest) {
-    lines.push(`- Concept (in Korean): "${hi(koRequest)}"`);
-  }
-  lines.push("");
-  lines.push("What to change:");
-  lines.push("- (Describe what to improve here. e.g. warmer color tone, softer character expression, more empty space in the center)");
-  lines.push("");
-  lines.push("What to keep:");
-  lines.push("- Overall composition and focal point");
-  lines.push("- Style consistency with the original direction");
-  if (input.hasReferenceImage) {
-    lines.push(`- The ${REFERENCE_ROLE_LABEL[input.referenceRole]} guidance from the reference image`);
-  }
-  lines.push("");
-  lines.push("Must avoid:");
-  if (forbids.length > 0) {
-    forbids.forEach((f) => lines.push(`- ${f}`));
-  } else {
-    lines.push("- anything that distracts from the main subject");
-  }
-  return lines.join("\n");
+export function buildRevisionPrompt(input: PromptInput): string {
+  return buildRevision(input);
 }
 
-export function buildPrompts(input: PromptInput): PromptOutput {
-  return {
-    koreanSummary: buildKoreanSummary(input),
-    gptImage: buildGptImage(input),
-    nanoBanana: buildNanoBanana(input),
-    midjourney: buildMidjourney(input),
-    revision: buildRevision(input),
-  };
+export function hasKoreanInOutput(s: string): boolean {
+  return containsKorean(s);
 }
