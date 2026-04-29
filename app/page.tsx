@@ -170,6 +170,9 @@ export default function HomePage() {
   // === 핸들러: AI 번역 ===
   const [translating, setTranslating] = useState(false);
   const [translateMessage, setTranslateMessage] = useState<string | null>(null);
+  const [lastTranslatedMemo, setLastTranslatedMemo] = useState<string>("");
+  const [lastExtractedKey, setLastExtractedKey] = useState<string>("");
+  const [lastAnalyzedKey, setLastAnalyzedKey] = useState<Record<number, string>>({});
   const handleAiTranslate = async () => {
     const memo = input.koreanMemo.trim();
     if (!memo) {
@@ -188,6 +191,7 @@ export default function HomePage() {
           ? `${p.englishSupplement.trim()}\n${english}`
           : english,
       }));
+      setLastTranslatedMemo(memo);
       setTranslateMessage("번역 완료. 영어 보충 입력에 채워졌습니다.");
     } catch (err) {
       const msg = err instanceof AiError ? err.message : "AI 호출 실패";
@@ -213,6 +217,7 @@ export default function HomePage() {
     try {
       const hints = await aiExtractOptions(memo, eng);
       setInput((p) => mergeAiHints(p, hints));
+      setLastExtractedKey(`${memo}\n${eng}`);
       setExtractMessage("AI가 옵션을 채웠습니다. 필요하면 직접 수정하세요.");
     } catch (err) {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
@@ -236,7 +241,7 @@ export default function HomePage() {
     try {
       const hints = await aiAnalyzeImage(ref.src, ref.role);
       setInput((p) => mergeAiHints(p, hints));
-      const roleLabel = ref.role;
+      setLastAnalyzedKey((prev) => ({ ...prev, [idx]: `${ref.src}|${ref.role}` }));
       setExtractMessage(`이미지 ${idx + 1} 분석 완료. 해당 역할의 옵션을 채웠습니다.`);
     } catch (err) {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
@@ -371,16 +376,30 @@ export default function HomePage() {
                 placeholder="예: 20대 여성 캐릭터, 슬림 체형, 긴 흰색 웨이브 머리, 금색 판타지 갑옷, 전신, 비스듬한 각도"
                 className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
               />
-              <button
-                type="button"
-                onClick={handleAiTranslate}
-                disabled={translating}
-                title="위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다 (Gemini 2.5 Flash, 1회 약 1~2원)."
-                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
-              >
-                <Wand2 size={14} className={translating ? "animate-spin" : ""} />
-                {translating ? "번역 중..." : "AI로 영어 번역하기"}
-              </button>
+              {(() => {
+                const done = !!lastTranslatedMemo && lastTranslatedMemo === input.koreanMemo.trim();
+                return (
+                  <button
+                    type="button"
+                    onClick={handleAiTranslate}
+                    disabled={translating}
+                    title={done ? "이미 이 메모로 번역했습니다. 다시 누르면 새로 번역합니다." : "위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다 (Gemini 2.5 Flash, 1회 약 1~2원)."}
+                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      done
+                        ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+                    }`}
+                  >
+                    {translating ? (
+                      <><Wand2 size={14} className="animate-spin" /> 번역 중...</>
+                    ) : done ? (
+                      <><Check size={14} /> 번역됨 (다시 누르면 재번역)</>
+                    ) : (
+                      <><Wand2 size={14} /> AI로 영어 번역하기</>
+                    )}
+                  </button>
+                );
+              })()}
               {translateMessage && (
                 <p className="mt-2 rounded-xl bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {translateMessage}
@@ -408,16 +427,31 @@ export default function HomePage() {
                 >
                   <Wand2 size={16} /> 키워드로 옵션 채우기
                 </button>
-                <button
-                  type="button"
-                  onClick={handleAiExtract}
-                  disabled={aiExtracting}
-                  title="LLM이 입력을 분석해 옵션 슬롯에 정확하게 분배합니다 (Gemini 2.5 Flash, 1회 약 2~4원). 정해진 값에 없으면 '직접 입력'으로 채워집니다."
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-300 bg-emerald-50 px-3 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
-                >
-                  <Wand2 size={16} className={aiExtracting ? "animate-spin" : ""} />
-                  {aiExtracting ? "분석 중..." : "AI로 옵션 채우기"}
-                </button>
+                {(() => {
+                  const currentKey = `${input.koreanMemo.trim()}\n${input.englishSupplement.trim()}`;
+                  const done = !!lastExtractedKey && lastExtractedKey === currentKey;
+                  return (
+                    <button
+                      type="button"
+                      onClick={handleAiExtract}
+                      disabled={aiExtracting}
+                      title={done ? "이미 이 입력으로 분석했습니다. 다시 누르면 재분석합니다." : "LLM이 입력을 분석해 옵션 슬롯에 정확하게 분배합니다 (1회 약 2~4원). 정해진 값에 없으면 '직접 입력'으로 채워집니다."}
+                      className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        done
+                          ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+                          : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+                      }`}
+                    >
+                      {aiExtracting ? (
+                        <><Wand2 size={16} className="animate-spin" /> 분석 중...</>
+                      ) : done ? (
+                        <><Check size={16} /> 옵션 채워짐 (재분석 가능)</>
+                      ) : (
+                        <><Wand2 size={16} /> AI로 옵션 채우기</>
+                      )}
+                    </button>
+                  );
+                })()}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 키워드는 즉시·무료, AI는 정확도↑ (1회 ~3원).
@@ -445,6 +479,7 @@ export default function HomePage() {
                     onChange={(patch) => setReference(i, patch)}
                     onAnalyze={() => handleAiAnalyzeImage(i)}
                     analyzing={analyzingIndex === i}
+                    analyzed={!!ref.src && lastAnalyzedKey[i] === `${ref.src}|${ref.role}`}
                   />
                 ))}
               </div>
@@ -888,12 +923,14 @@ function ReferenceSlot({
   onChange,
   onAnalyze,
   analyzing,
+  analyzed,
 }: {
   index: number;
   value: ReferenceImageInput;
   onChange: (patch: Partial<ReferenceImageInput>) => void;
   onAnalyze: () => void;
   analyzing: boolean;
+  analyzed: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -974,11 +1011,20 @@ function ReferenceSlot({
           type="button"
           onClick={onAnalyze}
           disabled={analyzing}
-          title={`이 이미지를 '${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? value.role}'로 분석해 해당 옵션만 채웁니다 (1회 약 2~4원).`}
-          className="mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[10px] font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+          title={analyzed ? "이 역할로 이미 분석했습니다. 다시 누르면 재분석합니다." : `이 이미지를 '${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? value.role}'로 분석해 해당 옵션만 채웁니다 (1회 약 2~4원).`}
+          className={`mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+            analyzed
+              ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+          }`}
         >
-          <Wand2 size={11} className={analyzing ? "animate-spin" : ""} />
-          {analyzing ? "분석 중..." : `${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? "분석"}로 분석`}
+          {analyzing ? (
+            <><Wand2 size={11} className="animate-spin" /> 분석 중...</>
+          ) : analyzed ? (
+            <><Check size={11} /> 분석됨</>
+          ) : (
+            <><Wand2 size={11} /> {REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? "분석"}로 분석</>
+          )}
         </button>
       )}
     </div>
