@@ -42,3 +42,4 @@ tests/enabled_check.ts
 tests/ko_check.ts
 tests/nano_ko_check.ts
 tests/nano_compact.ts
+tests/audit.ts

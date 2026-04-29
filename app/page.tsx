@@ -244,6 +244,13 @@ export default function HomePage() {
         <div className="grid gap-6 lg:grid-cols-[460px_1fr]">
           {/* 좌측 입력 */}
           <aside className="space-y-5 rounded-3xl bg-white p-5 shadow-sm dark:bg-slate-900">
+            <div className="flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+              <Info size={14} className="mt-0.5 shrink-0" />
+              <span>
+                메모 / 옵션 / 참고 이미지 중 원하는 것을 채우면 우측에 영어 프롬프트가 자동 생성됩니다.
+                옵션 그룹의 토글을 끄면 그 그룹은 프롬프트에서 제외됩니다.
+              </span>
+            </div>
             <Section title="원본 한글 메모" hint="한글로 자유롭게 적어 주세요. 최종 복사 프롬프트에는 들어가지 않습니다.">
               <textarea
                 value={input.koreanMemo}
@@ -303,21 +310,21 @@ export default function HomePage() {
                   type="button"
                   onClick={handleExtract}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-3 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                  title="현재 입력에서 키워드를 감지해 아래 옵션을 자동으로 채웁니다 (API 불필요)."
+                  title="단순 키워드 매칭으로 옵션을 자동으로 채웁니다 (API 불필요, 즉시 동작)."
                 >
-                  <Wand2 size={16} /> 옵션으로 정리하기
+                  <Wand2 size={16} /> 키워드로 옵션 채우기
                 </button>
                 <button
                   type="button"
                   disabled
-                  title="API 연결 후 활성화 예정 — 한글을 영어로 자연스럽게 변환하고 옵션을 더 정확히 추출합니다."
+                  title="API 연결 후 활성화 — 한글을 영어로 변환하고 옵션을 더 정확히 추출합니다 (정확도↑)."
                   className="inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-400 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-500"
                 >
-                  <Wand2 size={16} /> AI로 정리하기
+                  <Wand2 size={16} /> AI로 옵션 채우기
                 </button>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                좌: 키워드 매칭으로 즉시 동작. 우: API 연결 시 더 정확한 분석.
+                좌측은 즉시 동작(키워드), 우측은 API 연결 시 활성화됩니다(정확도↑).
               </p>
               {extractMessage && (
                 <p className="rounded-xl bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
@@ -392,34 +399,43 @@ export default function HomePage() {
               />
             </Section>
 
-            {/* 작업 유형별 옵션 */}
+            {/* 작업 유형별 옵션 — Section으로 감싸 다른 그룹과 동일 디자인 */}
             {input.workType === "character" && (
-              <CharacterOptionsBlock
-                value={input.character}
-                set={setCharField}
+              <Section
+                title="캐릭터 옵션"
+                collapsible
                 enabled={input.enabled.character}
                 onEnabledChange={(v) => setEnabled("character", v)}
-              />
+              >
+                <CharacterOptionsBlock value={input.character} set={setCharField} />
+              </Section>
             )}
             {input.workType === "background" && (
-              <BackgroundOptionsBlock
-                value={input.background}
-                set={setBgField}
+              <Section
+                title="배경 옵션"
+                collapsible
                 enabled={input.enabled.background}
                 onEnabledChange={(v) => setEnabled("background", v)}
-              />
+              >
+                <BackgroundOptionsBlock value={input.background} set={setBgField} />
+              </Section>
             )}
             {(input.workType === "frame" ||
               input.workType === "icon" ||
               input.workType === "object") && (
-              <AssetOptionsBlock
-                workType={input.workType}
-                value={input.asset}
-                set={setAssetField}
-                toggleRule={toggleAssetRule}
+              <Section
+                title={input.workType === "frame" ? "프레임 옵션" : input.workType === "icon" ? "아이콘 옵션" : "오브젝트 옵션"}
+                collapsible
                 enabled={input.enabled.asset}
                 onEnabledChange={(v) => setEnabled("asset", v)}
-              />
+              >
+                <AssetOptionsBlock
+                  workType={input.workType}
+                  value={input.asset}
+                  set={setAssetField}
+                  toggleRule={toggleAssetRule}
+                />
+              </Section>
             )}
           </aside>
 
@@ -429,7 +445,7 @@ export default function HomePage() {
 
             <ModelCard
               title="GPT Image"
-              hint="문장형 지시문 (한/영 모두 지원 — 토글로 전환)"
+              hint="문장형, 한/영 지원"
               options={GPT_OPTIONS}
               selected={gptModel}
               onSelect={setGptModel}
@@ -438,7 +454,7 @@ export default function HomePage() {
             />
             <ModelCard
               title="Nano Banana"
-              hint="Goal / Subject / Style / Composition / Quality / Avoid 구조 (한/영 토글)"
+              hint="구조형(목표/디테일/스타일/구도/품질/제외), 한/영 지원"
               options={NANO_OPTIONS}
               selected={nanoModel}
               onSelect={setNanoModel}
@@ -447,7 +463,7 @@ export default function HomePage() {
             />
             <ModelCard
               title="Midjourney"
-              hint="키워드 + --ar / --no / --sref / --oref"
+              hint="키워드형 + 비율·제외·참고 파라미터"
               options={MJ_OPTIONS}
               selected={mjModel}
               onSelect={setMjModel}
@@ -455,7 +471,7 @@ export default function HomePage() {
             />
             <ModelCard
               title="Niji"
-              hint="애니/캐릭터 키워드 + --niji + --ar / --no / --cref"
+              hint="애니 키워드형 + Niji 파라미터"
               options={NIJI_OPTIONS}
               selected={nijiModel}
               onSelect={setNijiModel}
@@ -463,7 +479,7 @@ export default function HomePage() {
             />
             <ResultCard
               title="수정 요청용"
-              hint="결과 이미지가 마음에 안 들 때 쓰는 수정 지시 템플릿"
+              hint="결과가 마음에 안 들 때 쓰는 수정 템플릿"
               content={revisionOutput}
             />
           </main>
@@ -482,33 +498,12 @@ export default function HomePage() {
 function CharacterOptionsBlock({
   value,
   set,
-  enabled,
-  onEnabledChange,
 }: {
   value: CharacterInput;
   set: <K extends keyof CharacterInput>(k: K, v: CharacterInput[K]) => void;
-  enabled: boolean;
-  onEnabledChange: (v: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
-  const isOff = !enabled;
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((s) => !s)}
-          className="flex flex-1 items-center justify-between text-left"
-        >
-          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>캐릭터 옵션</div>
-          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
-        </button>
-        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
-          사용
-        </label>
-      </div>
-      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
+    <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2">
         <OptionPicker label="성별" options={GENDER_OPTIONS}
           value={value.gender} customText={value.genderCustom}
@@ -544,7 +539,6 @@ function CharacterOptionsBlock({
       <OptionPicker label="캐릭터 제작 형태" options={CHARACTER_SHEET_OPTIONS} moreOptions={CHARACTER_SHEET_MORE_OPTIONS}
         value={value.characterSheet} customText={value.characterSheetCustom}
         onChange={(v, c) => { set("characterSheet", v); set("characterSheetCustom", c); }} />
-      </div>)}
     </div>
   );
 }
@@ -552,33 +546,12 @@ function CharacterOptionsBlock({
 function BackgroundOptionsBlock({
   value,
   set,
-  enabled,
-  onEnabledChange,
 }: {
   value: BackgroundInput;
   set: <K extends keyof BackgroundInput>(k: K, v: BackgroundInput[K]) => void;
-  enabled: boolean;
-  onEnabledChange: (v: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
-  const isOff = !enabled;
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((s) => !s)}
-          className="flex flex-1 items-center justify-between text-left"
-        >
-          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>배경 옵션</div>
-          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
-        </button>
-        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
-          사용
-        </label>
-      </div>
-      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
+    <div className="space-y-4">
       <OptionPicker label="장소" options={PLACE_OPTIONS} moreOptions={PLACE_MORE_OPTIONS}
         value={value.place} customText={value.placeCustom}
         onChange={(v, c) => { set("place", v); set("placeCustom", c); }} />
@@ -617,7 +590,6 @@ function BackgroundOptionsBlock({
           value={value.visibleRange} customText={value.visibleRangeCustom}
           onChange={(v, c) => { set("visibleRange", v); set("visibleRangeCustom", c); }} />
       </div>
-      </div>)}
     </div>
   );
 }
@@ -627,40 +599,14 @@ function AssetOptionsBlock({
   value,
   set,
   toggleRule,
-  enabled,
-  onEnabledChange,
 }: {
   workType: WorkType;
   value: AssetInput;
   set: <K extends keyof AssetInput>(k: K, v: AssetInput[K]) => void;
   toggleRule: (v: string) => void;
-  enabled: boolean;
-  onEnabledChange: (v: boolean) => void;
 }) {
-  const [open, setOpen] = useState(true);
-  const isOff = !enabled;
-  const labelMap: Record<string, string> = {
-    frame: "프레임 옵션",
-    icon: "아이콘 옵션",
-    object: "오브젝트 옵션",
-  };
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/40">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((s) => !s)}
-          className="flex flex-1 items-center justify-between text-left"
-        >
-          <div className={`text-sm font-bold ${isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"}`}>{labelMap[workType] ?? "에셋 옵션"}</div>
-          <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "" : "-rotate-90"}`} />
-        </button>
-        <label className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={enabled} onChange={(e) => onEnabledChange(e.target.checked)} className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100" />
-          사용
-        </label>
-      </div>
-      {open && (<div className={isOff ? "space-y-4 opacity-40" : "space-y-4"}>
+    <div className="space-y-4">
       <OptionPicker label="형태" options={SHAPE_OPTIONS}
         value={value.shape} customText={value.shapeCustom}
         onChange={(v, c) => { set("shape", v); set("shapeCustom", c); }} />
@@ -690,7 +636,6 @@ function AssetOptionsBlock({
           ))}
         </div>
       </Section>
-      </div>)}
     </div>
   );
 }
@@ -1121,11 +1066,11 @@ function Section({
   const isOff = enabled === false;
   const showToggle = enabled !== undefined && onEnabledChange !== undefined;
 
-  const headerClass = `flex items-center gap-2 rounded-xl px-3 py-2.5 transition ${
+  const headerClass = `flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
     isOff
-      ? "bg-slate-100 dark:bg-slate-800/60"
-      : "bg-slate-50 dark:bg-slate-800/40"
-  } ${collapsible ? "hover:bg-slate-100 dark:hover:bg-slate-800/70" : ""}`;
+      ? "border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80"
+      : "border-slate-200 bg-slate-50 dark:border-slate-700/60 dark:bg-slate-800/50"
+  } ${collapsible ? "hover:bg-slate-100 dark:hover:bg-slate-800" : ""}`;
 
   const titleText = (
     <span
@@ -1196,7 +1141,7 @@ function ToggleSwitch({
       <span
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
           checked
-            ? "bg-blue-600 dark:bg-blue-500"
+            ? "bg-emerald-500 dark:bg-emerald-500"
             : "bg-slate-300 dark:bg-slate-600"
         }`}
       >
@@ -1207,7 +1152,7 @@ function ToggleSwitch({
         />
       </span>
       {label && (
-        <span className={`text-[10px] font-semibold ${checked ? "text-blue-600 dark:text-blue-400" : "text-slate-400 dark:text-slate-500"}`}>
+        <span className={`text-[10px] font-semibold ${checked ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}>
           {label}
         </span>
       )}

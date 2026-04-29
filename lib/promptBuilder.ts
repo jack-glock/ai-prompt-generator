@@ -604,15 +604,22 @@ export interface PromptSummary {
 export function buildSummary(input: PromptInput): PromptSummary {
   const rows: SummaryRow[] = [];
   const wt = WORK_TYPE_OPTIONS.find((o) => o.value === input.workType);
-  if (wt) rows.push({ label: "작업 유형", value: wt.label });
+  if (wt) rows.push({
+    label: "작업 유형",
+    value: input.enabled.workType ? wt.label : `${wt.label} (꺼짐)`,
+  });
 
-  const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
-  if (styleLabel) rows.push({ label: "스타일", value: styleLabel });
+  if (input.enabled.style) {
+    const styleLabel = resolveOptionLabel(STYLE_OPTIONS, input.style, input.styleCustom);
+    if (styleLabel) rows.push({ label: "스타일", value: styleLabel });
+  }
 
-  const ratio = resolveAspectRatio(input);
-  rows.push({ label: "비율", value: ratio });
+  if (input.enabled.aspectRatio) {
+    const ratio = resolveAspectRatio(input);
+    rows.push({ label: "비율", value: ratio });
+  }
 
-  if (input.workType === "character") {
+  if (input.workType === "character" && input.enabled.character) {
     const c = input.character;
     const gender = resolveOptionLabel(GENDER_OPTIONS, c.gender, c.genderCustom);
     const age = resolveOptionLabel(AGE_OPTIONS, c.ageRange, c.ageRangeCustom);
@@ -644,7 +651,7 @@ export function buildSummary(input: PromptInput): PromptSummary {
     if (cs) rows.push({ label: "캐릭터 시트", value: cs });
   }
 
-  if (input.workType === "background") {
+  if (input.workType === "background" && input.enabled.background) {
     const b = input.background;
     const place = resolveOneFromTwo(PLACE_OPTIONS, PLACE_MORE_OPTIONS, b.place, b.placeCustom);
     if (place) rows.push({ label: "장소", value: place });
@@ -677,7 +684,7 @@ export function buildSummary(input: PromptInput): PromptSummary {
     if (vr) rows.push({ label: "보이는 범위", value: vr });
   }
 
-  if (input.workType === "frame" || input.workType === "icon" || input.workType === "object") {
+  if ((input.workType === "frame" || input.workType === "icon" || input.workType === "object") && input.enabled.asset) {
     const a = input.asset;
     const shape = resolveOptionLabel(SHAPE_OPTIONS, a.shape, a.shapeCustom);
     if (shape) rows.push({ label: "형태", value: shape });
@@ -705,18 +712,24 @@ export function buildSummary(input: PromptInput): PromptSummary {
   const eng = englishSupplementClean(input);
   if (eng) rows.push({ label: "영어 보충", value: eng });
 
-  const negTags = input.negativeChecks
-    .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
-    .filter((x): x is string => !!x);
-  const negCustom = (input.negativeCustom ?? "").trim();
-  if (negCustom) negTags.push(negCustom);
+  const negTags: string[] = [];
+  if (input.enabled.negative) {
+    for (const v of input.negativeChecks) {
+      const lbl = NEGATIVE_OPTIONS.find((o) => o.value === v)?.label;
+      if (lbl) negTags.push(lbl);
+    }
+    const negCustom = (input.negativeCustom ?? "").trim();
+    if (negCustom) negTags.push(negCustom);
+  }
 
   const refTags: string[] = [];
-  input.references.forEach((r, i) => {
-    if (!r.src) return;
-    const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? r.role;
-    refTags.push(`이미지 ${i + 1}: ${label}`);
-  });
+  if (input.enabled.references) {
+    input.references.forEach((r, i) => {
+      if (!r.src) return;
+      const label = REFERENCE_ROLE_OPTIONS.find((o) => o.value === r.role)?.label ?? r.role;
+      refTags.push(`이미지 ${i + 1}: ${label}`);
+    });
+  }
 
   return {
     rows,
