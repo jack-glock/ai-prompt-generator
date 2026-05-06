@@ -353,8 +353,8 @@ export default function HomePage() {
 
         {/* Sticky 옵션 헤더: 작업 유형 / 스타일 / 비율 / 안내문 */}
         <div className="clay-shadow sticky top-4 z-30 mb-6 space-y-3 rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
-          {/* 1행: 작업 유형(좌, 540px — 좌측 aside 폭과 정렬) + 스타일(우, 1fr — 우측 결과 카드 폭과 정렬) */}
-          <div className="grid gap-6 lg:grid-cols-[540px_1fr]">
+          {/* 1행: 작업 유형(좌, 500px — 좌측 aside 폭과 정렬) + 스타일(우, 1fr — 우측 결과 카드 폭과 정렬) */}
+          <div className="grid gap-6 lg:grid-cols-[500px_1fr]">
             <Section
               title="작업 유형"
               collapsible
@@ -403,7 +403,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[540px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[500px_1fr]">
           {/* 좌측 입력 */}
           <aside className="clay-shadow space-y-5 rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
             {/* 원본 한글 메모 — placeholder가 라벨 역할 */}
@@ -1501,7 +1501,7 @@ function CardShell({
               onClick={() => setLangPersist("en")}
               className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
                 lang === "en"
-                  ? "bg-[#01418d] text-white dark:bg-[#01418d] dark:text-white"
+                  ? "bg-[#078a52] text-white dark:bg-[#078a52] dark:text-white"
                   : "bg-white text-[#55534e] hover:bg-[#faf9f7] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
               }`}
             >
@@ -1512,7 +1512,7 @@ function CardShell({
               onClick={() => setLangPersist("ko")}
               className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
                 lang === "ko"
-                  ? "bg-[#01418d] text-white dark:bg-[#01418d] dark:text-white"
+                  ? "bg-[#078a52] text-white dark:bg-[#078a52] dark:text-white"
                   : "bg-white text-[#55534e] hover:bg-[#faf9f7] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
               }`}
             >
@@ -1642,7 +1642,7 @@ function ToggleSwitch({
       <span
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
           checked
-            ? "bg-[#01418d] dark:bg-[#01418d]"
+            ? "bg-[#078a52] dark:bg-[#078a52]"
             : "bg-[#dad4c8] dark:bg-[#3a352e]"
         }`}
       >
@@ -1653,7 +1653,7 @@ function ToggleSwitch({
         />
       </span>
       {label && (
-        <span className={`text-[10px] font-semibold ${checked ? "text-[#01418d] dark:text-[#87b7f5]" : "text-[#9f9b93] dark:text-[#8a8479]"}`}>
+        <span className={`text-[10px] font-semibold ${checked ? "text-[#078a52] dark:text-[#84e7a5]" : "text-[#9f9b93] dark:text-[#8a8479]"}`}>
           {label}
         </span>
       )}
