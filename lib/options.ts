@@ -15,20 +15,20 @@ export interface OptionItem {
 
 // === 작업 유형 ===
 export const WORK_TYPE_OPTIONS: OptionItem[] = [
-  { value: "character", label: "캐릭터", en: "a game character illustration" },
+  { value: "character", label: "캐릭터", en: "a character illustration" },
   { value: "background", label: "배경", en: "a background scene illustration" },
   { value: "frame", label: "프레임", en: "a decorative UI frame asset" },
-  { value: "icon", label: "아이콘", en: "a single game icon asset" },
-  { value: "object", label: "오브젝트", en: "a single game object asset" },
+  { value: "icon", label: "아이콘", en: "a single icon asset" },
+  { value: "object", label: "오브젝트", en: "a single object asset" },
 ];
 
 // 짧은 키워드 버전 (Midjourney/Niji용)
 export const WORK_TYPE_KEYWORD: Record<string, string> = {
-  character: "game character art",
+  character: "character art",
   background: "background environment art",
   frame: "decorative UI frame, ornamental border",
-  icon: "single game icon",
-  object: "single isolated game object",
+  icon: "single icon",
+  object: "single isolated object",
 };
 
 // === 스타일 ===
@@ -59,33 +59,46 @@ export const STYLE_OPTIONS: OptionItem[] = [
   { value: "custom", label: "직접 입력", en: "__custom__", desc: "원하는 스타일을 영어로 직접 적습니다." },
 ];
 
+// === 스타일 카테고리 ===
+// "자동"과 "직접 입력"은 카테고리 밖에 별도로 노출됩니다.
+export type StyleCategory = "illustration_2d" | "stereo_3d" | "premium_mood" | "ui";
+
+export const STYLE_CATEGORIES: { key: StyleCategory; label: string; styles: string[] }[] = [
+  {
+    key: "illustration_2d",
+    label: "2D 일러스트",
+    styles: ["casual_game", "cartoon", "anime_manga", "semi_realistic", "realistic", "pixel_art", "retro"],
+  },
+  {
+    key: "stereo_3d",
+    label: "3D / 입체",
+    styles: ["2_5d", "stylized_3d", "low_poly", "clay", "toy", "isometric"],
+  },
+  {
+    key: "premium_mood",
+    label: "프리미엄 / 무드",
+    styles: ["premium_fantasy", "premium_gold", "neon"],
+  },
+  {
+    key: "ui",
+    label: "UI 전용",
+    styles: ["ui_icon"],
+  },
+];
+
 // === 비율 ===
+// 가로 → 정사각 → 세로 순서 (게임 디자인 워크플로우에 직관적)
 export const ASPECT_RATIO_OPTIONS: OptionItem[] = [
   { value: "16:9", label: "16:9", en: "16:9" },
+  { value: "2:1", label: "2:1", en: "2:1" },
+  { value: "3:2", label: "3:2", en: "3:2" },
   { value: "4:3", label: "4:3", en: "4:3" },
   { value: "1:1", label: "1:1", en: "1:1" },
   { value: "3:4", label: "3:4", en: "3:4" },
-  { value: "1000x600", label: "1000x600", en: "1000x600" },
+  { value: "2:3", label: "2:3", en: "2:3" },
+  { value: "1:2", label: "1:2", en: "1:2" },
+  { value: "9:16", label: "9:16", en: "9:16" },
   { value: "custom", label: "직접 입력", en: "__custom__" },
-];
-
-// === 빼고 싶은 것 (체크박스) ===
-export const NEGATIVE_OPTIONS: OptionItem[] = [
-  { value: "text", label: "텍스트", en: "no text" },
-  { value: "logo", label: "로고", en: "no logo" },
-  { value: "watermark", label: "워터마크", en: "no watermark" },
-  { value: "signature", label: "서명", en: "no signature" },
-  { value: "noise", label: "노이즈", en: "no noise" },
-  { value: "blur", label: "흐릿함", en: "no blur" },
-  { value: "low_res", label: "저해상도 느낌", en: "no low-resolution look" },
-  { value: "messy_texture", label: "지저분한 텍스처", en: "no messy textures" },
-  { value: "over_detail", label: "과한 디테일", en: "avoid excessive detail" },
-  { value: "over_sparkle", label: "과한 반짝이", en: "no excessive sparkles" },
-  { value: "over_shadow", label: "과한 그림자", en: "no excessive shadows" },
-  { value: "distorted_hand", label: "이상한 손", en: "no distorted hands" },
-  { value: "distorted_face", label: "왜곡된 얼굴", en: "no distorted face" },
-  { value: "cropped", label: "잘린 오브젝트", en: "no cropped objects" },
-  { value: "complex_bg", label: "복잡한 배경", en: "no overly complex background" },
 ];
 
 // ===== 캐릭터 옵션 =====

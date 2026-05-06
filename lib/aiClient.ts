@@ -108,10 +108,15 @@ export async function aiExtractOptions(
  * 참고 이미지 1장을 Gemini Vision으로 분석.
  * 역할에 해당하는 슬롯만 채워 충돌을 막습니다.
  */
+export interface AiAnalyzeImageResult {
+  hints: AiExtractHints;
+  description: string;
+}
+
 export async function aiAnalyzeImage(
   imageDataUrl: string,
   role: string
-): Promise<AiExtractHints> {
+): Promise<AiAnalyzeImageResult> {
   if (!imageDataUrl) throw new AiError("이미지가 없습니다.");
 
   let res: Response;
@@ -125,7 +130,7 @@ export async function aiAnalyzeImage(
     throw new AiError("네트워크 오류로 AI에 연결할 수 없습니다.");
   }
 
-  let data: { hints?: AiExtractHints; error?: string } = {};
+  let data: { hints?: AiExtractHints; description?: string; error?: string } = {};
   try { data = await res.json(); } catch { /* ignore */ }
 
   if (!res.ok) {
@@ -134,7 +139,7 @@ export async function aiAnalyzeImage(
   if (!data.hints) {
     throw new AiError("AI가 빈 응답을 보냈습니다.");
   }
-  return data.hints;
+  return { hints: data.hints, description: data.description ?? "" };
 }
 
 // AI hints를 PromptInput에 병합. 빈 문자열은 옵션 슬롯 무효화 방지를 위해 무시.

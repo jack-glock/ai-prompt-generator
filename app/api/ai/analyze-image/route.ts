@@ -182,6 +182,7 @@ Rules:
 4. If the image doesn't clearly show a slot, leave the slot value as null and *Custom as "".
 5. Do NOT include slots NOT listed below — they belong to other roles.
 6. Do NOT mention specific brand names, game titles, or real artist names.
+7. Also include a Korean description (2~3 sentences) focused on the selected role. Put it in the "description" field. Describe what you actually see, in natural Korean. Do NOT add disclaimers or meta commentary.
 
 Slots to fill (only these):
 ${slots}
@@ -191,7 +192,8 @@ Output JSON keys must follow the dotted path (e.g. "character.hair") and each pa
 Example output shape:
 {
   "character.hair": "long" | "custom" | null,
-  "character.hairCustom": "red hair" | ""
+  "character.hairCustom": "red hair" | "",
+  "description": "한국어 설명 2~3문장."
 }
 
 JSON:`;
@@ -211,7 +213,7 @@ JSON:`;
         ],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 1000,
+          maxOutputTokens: 1500,
           responseMimeType: "application/json",
         },
       }),
@@ -220,8 +222,41 @@ JSON:`;
     if (!upstream.ok) {
       const errText = await upstream.text();
       console.error("Vision analyze error:", upstream.status, errText);
+      // Gemini의 실제 에러 메시지를 사용자에게도 전달해서 진단을 쉽게 한다.
+      let detail = "";
+      try {
+        const errJson = JSON.parse(errText);
+        detail = errJson?.error?.message ?? "";
+      } catch {
+        detail = errText.slice(0, 200);
+      }
+      const hint = (() => {
+        if (upstream.status === 429) return "분당 또는 일일 사용량 초과입니다. 잠시 후 다시 시도해 주세요.";
+        if (upstream.status === 400) return "요청 형식 문제입니다. 이미지를 바꿔 다시 시도해 보세요.";
+        if (upstream.status === 403) return "API 키 권한 문제입니다.";
+        if (detail.toLowerCase().includes("safety")) return "Gemini가 이미지의 안전 정책으로 거절했습니다. 다른 이미지를 시도해 주세요.";
+        return "Gemini 응답: " + (detail || "상세 정보 없음");
+      })();
       return NextResponse.json(
-        { error: `AI 호출 실패 (status ${upstream.status}). API 키와 사용량을 확인해 주세요.` },
+        { error: `AI 호출 실패 (status ${upstream.status}). ${hint}` },
+        { status: 502 }
+      );
+    }
+
+    // Gemini는 candidates[0].finishReason 으로 차단 여부를 알려준다.
+    // SAFETY, RECITATION 등 비정상 종료 사유를 사용자에게 전달.
+    const preCheck = await upstream.clone().json().catch(() => null);
+    const finishReason = preCheck?.candidates?.[0]?.finishReason;
+    const blockReason = preCheck?.promptFeedback?.blockReason;
+    if (blockReason) {
+      return NextResponse.json(
+        { error: `Gemini가 이미지를 거절했습니다 (사유: ${blockReason}). 다른 이미지를 시도해 주세요.` },
+        { status: 502 }
+      );
+    }
+    if (finishReason && finishReason !== "STOP") {
+      return NextResponse.json(
+        { error: `Gemini가 응답을 비정상 종료했습니다 (사유: ${finishReason}). 다른 이미지나 다른 역할을 시도해 보세요.` },
         { status: 502 }
       );
     }
@@ -239,6 +274,10 @@ JSON:`;
       return NextResponse.json({ error: "AI 응답을 파싱할 수 없습니다." }, { status: 502 });
     }
 
+    // description은 별도로 추출해서 hints와 분리
+    const description: string =
+      typeof flat.description === "string" ? flat.description : "";
+
     // dotted path 응답을 nested hints 구조로 변환 (AiExtractHints 호환)
     const hints: Record<string, unknown> = {
       character: {} as Record<string, string | null>,
@@ -246,6 +285,7 @@ JSON:`;
       asset: {} as Record<string, string | null>,
     };
     for (const [path, value] of Object.entries(flat)) {
+      if (path === "description") continue;
       if (value == null || value === "") continue;
       const parts = path.split(".");
       if (parts.length === 1) {
@@ -260,7 +300,7 @@ JSON:`;
       }
     }
 
-    return NextResponse.json({ hints, role });
+    return NextResponse.json({ hints, role, description });
   } catch (err) {
     console.error("Analyze image route exception:", err);
     return NextResponse.json(

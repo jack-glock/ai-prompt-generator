@@ -20,7 +20,6 @@ const characterScenario: PromptInput = {
   englishSupplement: "soft rim light from behind",
   style: "premium_fantasy",
   aspectRatio: "3:4",
-  negativeChecks: ["text", "logo", "distorted_hand"],
   character: {
     ...DEFAULT_INPUT.character,
     gender: "female",
@@ -63,7 +62,6 @@ console.log("\n[요약 카드 행]");
 for (const r of summary.rows) {
   console.log(`  ${r.label.padEnd(20, " ")} ${r.value}`);
 }
-console.log(`  ${summary.negative.label}: ${summary.negative.tags.join(" / ")}`);
 
 showOutput("GPT Image 1.5", buildPromptFor("gpt_image_1_5", characterScenario));
 showOutput("Nano Banana 2", buildPromptFor("nano_banana_2", characterScenario));

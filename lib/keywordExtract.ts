@@ -19,7 +19,6 @@ interface ExtractedHints {
   character: Partial<CharacterInput>;
   background: Partial<BackgroundInput>;
   asset: Partial<AssetInput>;
-  negativeAdds: string[];
 }
 
 // 키워드 → 옵션 매핑 (한국어 + 영어)
@@ -46,11 +45,15 @@ const RULES: Rule[] = [
   { tokens: ["아이콘", "icon"], apply: (h) => (h.workType = "icon") },
   { tokens: ["오브젝트", "소품", "object", "prop"], apply: (h) => (h.workType = "object") },
 
-  // 스타일 (premium 단독은 모호 — "premium fantasy" / "premium gold"는 명시적으로 분리)
+  // 스타일
+  // 룰 순서 정책:
+  // - 룰은 위→아래로 평가되며 같은 슬롯(여기서는 style)에 매칭이 여러 번 일어나면 마지막이 이긴다.
+  // - 따라서 더 구체적/명시적인 키워드(예: "UI 아이콘 스타일")는 일반적/형용사적인 키워드(예: "프리미엄") 뒤에 배치해야 한다.
+  // - "프리미엄" 단독은 사용자가 형용사로 쓰는 경우가 많아(예: "프리미엄하게") 단독 매칭은 하지 않는다.
+  //   "프리미엄 골드", "고급 판타지" 같이 두 단어 이상 결합한 명시적 표현만 매칭한다.
   { tokens: ["프리미엄 골드", "premium gold", "luxury gold", "black gold"], apply: (h) => (h.style = "premium_gold") },
   { tokens: ["고급 판타지", "premium fantasy", "fantasy art"], apply: (h) => (h.style = "premium_fantasy") },
   { tokens: ["판타지", "fantasy"], apply: (h) => (h.style = "premium_fantasy") },
-  { tokens: ["프리미엄"], apply: (h) => (h.style = "premium_fantasy") },
   { tokens: ["네온", "neon"], apply: (h) => (h.style = "neon") },
   { tokens: ["픽셀", "pixel"], apply: (h) => (h.style = "pixel_art") },
   { tokens: ["레트로", "retro"], apply: (h) => (h.style = "retro") },
@@ -65,12 +68,14 @@ const RULES: Rule[] = [
   { tokens: ["아이소메트릭", "isometric"], apply: (h) => (h.style = "isometric") },
   { tokens: ["2.5d"], apply: (h) => (h.style = "2_5d") },
   { tokens: ["캐주얼", "모바일 게임"], apply: (h) => (h.style = "casual_game") },
+  // UI/앱 아이콘 스타일 — 가장 명시적인 표현이므로 다른 스타일 룰을 모두 덮어쓴다.
+  { tokens: ["ui 아이콘 스타일", "ui 아이콘", "앱 아이콘 스타일", "앱 아이콘", "ui icon", "app icon"], apply: (h) => (h.style = "ui_icon") },
 
   // 캐릭터 - 성별
   { tokens: ["여성", "여자", "여캐", "female", "girl", "woman"], apply: (h) => (h.character.gender = "female") },
   { tokens: ["남성", "남자", "남캐", "male", "boy", "man"], apply: (h) => (h.character.gender = "male") },
 
-  // 캐릭터 - 나이대
+  // 캐릭터 - 연령
   { tokens: ["어린이", "아이", "child"], apply: (h) => (h.character.ageRange = "child") },
   { tokens: ["10대", "teen"], apply: (h) => (h.character.ageRange = "teen") },
   { tokens: ["20대"], apply: (h) => (h.character.ageRange = "20s") },
@@ -234,7 +239,6 @@ function makeEmptyHints(): ExtractedHints {
     character: {},
     background: {},
     asset: {},
-    negativeAdds: [],
   };
 }
 

@@ -53,8 +53,9 @@ import {
   ModelKey,
   WORK_TYPE_OPTIONS,
   STYLE_OPTIONS,
+  STYLE_CATEGORIES,
+  StyleCategory,
   ASPECT_RATIO_OPTIONS,
-  NEGATIVE_OPTIONS,
   GENDER_OPTIONS,
   AGE_OPTIONS,
   BODY_OPTIONS,
@@ -98,7 +99,8 @@ import {
 } from "@/lib/options";
 
 import { extractOptions, applyHintsToInput, countAppliedHints } from "@/lib/keywordExtract";
-import { aiTranslateKoreanToEnglish, aiExtractOptions, aiAnalyzeImage, mergeAiHints, AiError, AiExtractHints } from "@/lib/aiClient";
+import { aiTranslateKoreanToEnglish, aiExtractOptions, aiAnalyzeImage, mergeAiHints, AiError } from "@/lib/aiClient";
+import { resizeImageDataUrl } from "@/lib/imageUtils";
 
 export default function HomePage() {
   const [input, setInput] = useState<PromptInput>(DEFAULT_INPUT);
@@ -199,6 +201,23 @@ export default function HomePage() {
 
   // === 핸들러: 참고 이미지 분석 (슬롯별) ===
   const [analyzingIndex, setAnalyzingIndex] = useState<number | null>(null);
+  // 슬롯별 AI 한글 설명 (편집 가능)
+  const [imageDescriptions, setImageDescriptions] = useState<Record<number, string>>({});
+  // 슬롯별 활성/비활성. #1은 항상 표시(true), #2와 #3는 헤더의 토글 버튼으로 켜고 끔.
+  const [activeSlots, setActiveSlots] = useState<boolean[]>([true, false, false]);
+  const toggleSlot = (idx: number) => {
+    setActiveSlots((prev) => {
+      const next = [...prev];
+      next[idx] = !next[idx];
+      return next;
+    });
+    // 슬롯을 끄면 그 슬롯의 이미지와 한글 설명도 같이 정리
+    if (activeSlots[idx]) {
+      setReference(idx, { src: null });
+      setImageDescriptions((prev) => ({ ...prev, [idx]: "" }));
+      setLastAnalyzedKey((prev) => ({ ...prev, [idx]: "" }));
+    }
+  };
   const handleAiAnalyzeImage = async (idx: number) => {
     const ref = input.references[idx];
     if (!ref?.src) {
@@ -209,12 +228,13 @@ export default function HomePage() {
     setAnalyzingIndex(idx);
     setExtractMessage(null);
     try {
-      const hints = await aiAnalyzeImage(ref.src, ref.role);
+      const result = await aiAnalyzeImage(ref.src, ref.role);
       // 디버깅: 응답 형식 확인용 (개발자도구 콘솔)
       // eslint-disable-next-line no-console
-      console.log(`[AI image #${idx + 1} hints]`, hints);
-      setInput((p) => mergeAiHints(p, hints));
+      console.log(`[AI image #${idx + 1} result]`, result);
+      setInput((p) => mergeAiHints(p, result.hints));
       setLastAnalyzedKey((prev) => ({ ...prev, [idx]: `${ref.src}|${ref.role}` }));
+      setImageDescriptions((prev) => ({ ...prev, [idx]: result.description ?? "" }));
       setExtractMessage(`✓ 이미지 ${idx + 1} 분석 완료. 해당 역할의 옵션을 펼쳐서 확인하세요.`);
     } catch (err) {
       setExtractMessage(err instanceof AiError ? err.message : "AI 호출 실패");
@@ -258,14 +278,6 @@ export default function HomePage() {
   const setAssetField = <K extends keyof AssetInput>(k: K, v: AssetInput[K]) =>
     setInput((p) => ({ ...p, asset: { ...p.asset, [k]: v } }));
 
-  const toggleNegative = (v: string) =>
-    setInput((p) => ({
-      ...p,
-      negativeChecks: p.negativeChecks.includes(v)
-        ? p.negativeChecks.filter((x) => x !== v)
-        : [...p.negativeChecks, v],
-    }));
-
   const toggleAssetRule = (v: string) =>
     setInput((p) => {
       const has = p.asset.rules.includes(v);
@@ -278,11 +290,21 @@ export default function HomePage() {
       };
     });
 
-  const setReference = (idx: number, patch: Partial<ReferenceImageInput>) =>
+  const setReference = (idx: number, patch: Partial<ReferenceImageInput>) => {
     setInput((p) => ({
       ...p,
       references: p.references.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
     }));
+    // 이미지가 바뀌거나 제거되면 해당 슬롯의 AI 설명도 리셋
+    if ("src" in patch) {
+      setImageDescriptions((prev) => {
+        if (!prev[idx]) return prev;
+        const next = { ...prev };
+        delete next[idx];
+        return next;
+      });
+    }
+  };
 
   const setEnabled = (k: keyof PromptInput["enabled"], v: boolean) =>
     setInput((p) => ({ ...p, enabled: { ...p.enabled, [k]: v } }));
@@ -302,52 +324,95 @@ export default function HomePage() {
   }, [input.enabled]);
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 text-slate-900 dark:bg-slate-950 dark:text-slate-100 md:p-6">
+    <div className="min-h-screen p-4 md:p-6" style={{ color: "var(--clay-black)" }}>
       <div className="mx-auto max-w-7xl">
-        <header className="mb-6 flex flex-col gap-3 rounded-3xl bg-white p-6 shadow-sm dark:bg-slate-900 md:flex-row md:items-center md:justify-between">
+        <header className="clay-shadow mb-6 flex flex-col gap-3 rounded-[24px] border border-[#dad4c8] bg-white px-6 py-4 dark:border-[#3a352e] dark:bg-[#2a2723] md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="mb-1 text-sm font-semibold text-slate-500 dark:text-slate-400">AI Prompt Generator</p>
-            <h1 className="text-3xl font-black tracking-tight">멀티 모델 이미지 프롬프트 도구</h1>
-            <p className="mt-2 text-slate-600 dark:text-slate-400">
-              간단 요청 + 선택 옵션 → GPT Image / Nano Banana / Midjourney / Niji 용 영문 프롬프트로 변환합니다.
-            </p>
+            <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9f9b93]">AI Prompt Generator</p>
+            <h1 className="text-2xl font-black tracking-tight">멀티 모델 이미지 프롬프트 도구</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={toggleDark}
               aria-label={dark ? "라이트 모드로 전환" : "다크 모드로 전환"}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="clay-hover inline-flex items-center gap-2 rounded-full border border-[#dad4c8] bg-white px-4 py-2.5 text-sm font-semibold text-[#1a1a1a] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee]"
             >
-              {dark ? <Sun size={18} /> : <Moon size={18} />}
+              {dark ? <Sun size={16} /> : <Moon size={16} />}
               {dark ? "라이트" : "다크"}
             </button>
             <button
               type="button"
               onClick={handleReset}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-3 font-semibold hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              className="clay-hover inline-flex items-center gap-2 rounded-full border border-[#dad4c8] bg-white px-4 py-2.5 text-sm font-semibold text-[#1a1a1a] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee]"
             >
-              <RefreshCcw size={18} /> 초기화
+              <RefreshCcw size={16} /> 초기화
             </button>
           </div>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[460px_1fr]">
+        {/* Sticky 옵션 헤더: 작업 유형 / 스타일 / 비율 / 안내문 */}
+        <div className="clay-shadow sticky top-4 z-30 mb-6 space-y-3 rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
+          {/* 1행: 작업 유형(좌, 540px — 좌측 aside 폭과 정렬) + 스타일(우, 1fr — 우측 결과 카드 폭과 정렬) */}
+          <div className="grid gap-6 lg:grid-cols-[540px_1fr]">
+            <Section
+              title="작업 유형"
+              collapsible
+              enabled={input.enabled.workType}
+              onEnabledChange={(v) => setEnabled("workType", v)}
+            >
+              <div className="grid grid-cols-5 gap-1.5">
+                {WORK_TYPE_OPTIONS.map((w) => (
+                  <ChipSm
+                    key={w.value}
+                    label={w.label}
+                    active={input.workType === w.value}
+                    onClick={() => setField("workType", w.value as WorkType)}
+                  />
+                ))}
+              </div>
+            </Section>
+
+            <StylePicker
+              value={input.style}
+              customText={input.styleCustom}
+              onChange={(v, c) => setInput((p) => ({ ...p, style: v, styleCustom: c }))}
+              enabled={input.enabled.style}
+              onEnabledChange={(v) => setEnabled("style", v)}
+            />
+          </div>
+
+          {/* 2행: 비율 */}
+          <OptionPicker
+            label="비율"
+            hint="이미지 가로세로 비율입니다."
+            options={ASPECT_RATIO_OPTIONS}
+            value={input.aspectRatio}
+            customText={input.aspectRatioCustom}
+            onChange={(v, c) => setInput((p) => ({ ...p, aspectRatio: v, aspectRatioCustom: c }))}
+            enabled={input.enabled.aspectRatio}
+            onEnabledChange={(v) => setEnabled("aspectRatio", v)}
+          />
+
+          {/* 3행: 안내문 한 줄 (박스 없이 텍스트만) */}
+          <div className="flex items-center gap-2 px-1 text-xs text-[#9f9b93] dark:text-[#8a8479]">
+            <Info size={14} className="shrink-0 text-[#078a52] dark:text-[#84e7a5]" />
+            <span className="truncate">
+              메모 / 옵션 / 참고 이미지를 채우면 우측에 영어 프롬프트가 자동 생성됩니다. 옵션 그룹 토글을 끄면 그 그룹은 제외됩니다.
+            </span>
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[540px_1fr]">
           {/* 좌측 입력 */}
-          <aside className="space-y-5 rounded-3xl bg-white p-5 shadow-sm dark:bg-slate-900">
-            <div className="flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-              <Info size={14} className="mt-0.5 shrink-0" />
-              <span>
-                메모 / 옵션 / 참고 이미지 중 원하는 것을 채우면 우측에 영어 프롬프트가 자동 생성됩니다.
-                옵션 그룹의 토글을 끄면 그 그룹은 프롬프트에서 제외됩니다.
-              </span>
-            </div>
-            <Section title="원본 한글 메모" hint="한글로 자유롭게 적어 주세요. 최종 복사 프롬프트에는 들어가지 않습니다.">
+          <aside className="clay-shadow space-y-5 rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
+            {/* 원본 한글 메모 — placeholder가 라벨 역할 */}
+            <div>
               <textarea
                 value={input.koreanMemo}
                 onChange={(e) => setField("koreanMemo", e.target.value)}
-                placeholder="예: 20대 여성 캐릭터, 슬림 체형, 긴 흰색 웨이브 머리, 금색 판타지 갑옷, 전신, 비스듬한 각도"
-                className="h-24 w-full resize-none rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
+                placeholder="원본 한글 메모 — 한글로 자유롭게 적어 주세요 (예: 20대 여성 캐릭터, 슬림 체형, 긴 흰색 웨이브 머리, 금색 판타지 갑옷, 전신)"
+                className="h-24 w-full resize-none rounded-2xl border border-[#dad4c8] bg-white p-3 text-sm leading-6 outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#f5f3ee] dark:focus:border-[#dad4c8]"
               />
               {(() => {
                 const done = !!lastTranslatedMemo && lastTranslatedMemo === input.koreanMemo.trim();
@@ -357,10 +422,10 @@ export default function HomePage() {
                     onClick={handleAiTranslate}
                     disabled={translating}
                     title={done ? "이미 이 메모로 번역했습니다. 다시 누르면 새로 번역합니다." : "위 한글 메모를 자연스러운 영어로 번역해 아래 영어 보충 입력에 채워 줍니다 (Gemini 2.5 Flash, 1회 약 1~2원)."}
-                    className={`mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    className={`clay-hover mt-2 inline-flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                       done
-                        ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-                        : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
+                        ? "border-[#dad4c8] bg-[#eee9df] text-[#55534e] hover:bg-[#dad4c8] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#b3aea3] dark:hover:bg-[#352f29]"
+                        : "border-[#fc7981] bg-[#fff0f1] text-[#1a1a1a] hover:bg-[#ffe1e3] dark:border-[#fc7981] dark:bg-[#fc7981]/15 dark:text-[#f5f3ee] dark:hover:bg-[#fc7981]/25"
                     }`}
                   >
                     {translating ? (
@@ -378,57 +443,51 @@ export default function HomePage() {
                   {translateMessage}
                 </p>
               )}
-            </Section>
+            </div>
 
-            <Section title="영어 보충 입력 (선택)" hint="이 내용은 최종 영어 프롬프트에 그대로 들어갑니다.">
-              <textarea
-                value={input.englishSupplement}
-                onChange={(e) => setField("englishSupplement", e.target.value)}
-                placeholder="e.g. soft rim light from behind, gentle smile"
-                className="h-20 w-full resize-none rounded-2xl border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
-              />
-            </Section>
+            {/* 영어 보충 입력 — placeholder가 라벨 역할 */}
+            <textarea
+              value={input.englishSupplement}
+              onChange={(e) => setField("englishSupplement", e.target.value)}
+              placeholder="영어 보충 입력 (선택) — 영어로 적은 내용은 그대로 프롬프트에 들어갑니다 (e.g. soft rim light from behind, gentle smile)"
+              className="h-20 w-full resize-none rounded-2xl border border-[#dad4c8] bg-white p-3 text-sm leading-6 outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#f5f3ee] dark:focus:border-[#dad4c8]"
+            />
 
-            {/* 위 두 입력에서 옵션을 채우는 버튼 그룹 — 영어 보충 바로 아래 */}
+            {/* 위 두 입력에서 옵션을 채우는 버튼 그룹 — 메인(키워드) + 보조(AI) 위계 */}
             <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleExtract}
-                  title="단순 키워드 매칭으로 옵션을 자동으로 채웁니다 (API 불필요, 즉시 동작)."
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                >
-                  <Wand2 size={16} /> 키워드로 옵션 채우기
-                </button>
-                {(() => {
-                  const currentKey = `${input.koreanMemo.trim()}\n${input.englishSupplement.trim()}`;
-                  const done = !!lastExtractedKey && lastExtractedKey === currentKey;
-                  return (
-                    <button
-                      type="button"
-                      onClick={handleAiExtract}
-                      disabled={aiExtracting}
-                      title={done ? "이미 이 입력으로 분석했습니다. 다시 누르면 재분석합니다." : "LLM이 입력을 분석해 옵션 슬롯에 정확하게 분배합니다 (1회 약 2~4원). 정해진 값에 없으면 '직접 입력'으로 채워집니다."}
-                      className={`inline-flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        done
-                          ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-                          : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
-                      }`}
-                    >
-                      {aiExtracting ? (
-                        <><Wand2 size={16} className="animate-spin" /> 분석 중...</>
-                      ) : done ? (
-                        <><Check size={16} /> 옵션 채워짐 (재분석 가능)</>
-                      ) : (
-                        <><Wand2 size={16} /> AI로 옵션 채우기</>
-                      )}
-                    </button>
-                  );
-                })()}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                키워드는 즉시·무료, AI는 정확도↑ (1회 ~3원).
-              </p>
+              <button
+                type="button"
+                onClick={handleExtract}
+                title="단순 키워드 매칭으로 옵션을 자동으로 채웁니다 (API 불필요, 즉시·무료)."
+                className="clay-hover-strong inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-[#078a52] bg-[#078a52] px-4 py-3.5 text-base font-bold text-white transition hover:bg-[#02492a] dark:border-[#078a52] dark:bg-[#078a52] dark:text-white dark:hover:bg-[#02492a]"
+              >
+                <Wand2 size={18} /> 키워드로 옵션 채우기
+              </button>
+              {(() => {
+                const currentKey = `${input.koreanMemo.trim()}\n${input.englishSupplement.trim()}`;
+                const done = !!lastExtractedKey && lastExtractedKey === currentKey;
+                return (
+                  <button
+                    type="button"
+                    onClick={handleAiExtract}
+                    disabled={aiExtracting}
+                    title={done ? "이미 이 입력으로 분석했습니다. 다시 누르면 재분석합니다." : "LLM이 입력을 분석해 옵션 슬롯에 정확하게 분배합니다 (1회 약 2~4원). 정해진 값에 없으면 '직접 입력'으로 채워집니다."}
+                    className={`clay-hover inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      done
+                        ? "border-[#dad4c8] bg-[#eee9df] text-[#55534e] hover:bg-[#dad4c8] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#b3aea3] dark:hover:bg-[#352f29]"
+                        : "border-[#fc7981] bg-[#fff0f1] text-[#1a1a1a] hover:bg-[#ffe1e3] dark:border-[#fc7981] dark:bg-[#fc7981]/15 dark:text-[#f5f3ee] dark:hover:bg-[#fc7981]/25"
+                    }`}
+                  >
+                    {aiExtracting ? (
+                      <><Wand2 size={12} className="animate-spin" /> AI 분석 중...</>
+                    ) : done ? (
+                      <><Check size={12} /> AI 옵션 채워짐 (재분석 가능)</>
+                    ) : (
+                      <><Wand2 size={12} /> 더 풍부하게 — AI로 옵션 채우기 (~6원)</>
+                    )}
+                  </button>
+                );
+              })()}
               {extractMessage && (
                 <p className="rounded-xl bg-emerald-50 p-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {extractMessage}
@@ -436,99 +495,73 @@ export default function HomePage() {
               )}
             </div>
 
-            <Section
-              title="참고 이미지"
-              hint="이미지를 최대 3장까지 올릴 수 있습니다. 지금은 이미지 자체를 분석하지 않고 역할만 프롬프트에 반영됩니다."
-              collapsible
-              enabled={input.enabled.references}
-              onEnabledChange={(v) => setEnabled("references", v)}
-            >
-              <div className="grid grid-cols-3 gap-2">
-                {input.references.map((ref, i) => (
-                  <ReferenceSlot
-                    key={i}
-                    index={i}
-                    value={ref}
-                    onChange={(patch) => setReference(i, patch)}
-                    onAnalyze={() => handleAiAnalyzeImage(i)}
-                    analyzing={analyzingIndex === i}
-                    analyzed={!!ref.src && lastAnalyzedKey[i] === `${ref.src}|${ref.role}`}
-                  />
+            {/* 참고 이미지 — 헤더에 #2 #3 슬롯 토글 버튼이 인라인으로 들어간 커스텀 섹션 */}
+            <section>
+              <div
+                className={`flex items-center gap-2 rounded-2xl border px-3 py-2.5 transition ${
+                  input.enabled.references === false
+                    ? "border-[#dad4c8] bg-[#eee9df]/60 dark:border-[#3a352e] dark:bg-[#2c2925]/80"
+                    : "border-[#dad4c8] bg-[#eee9df] dark:border-[#3a352e] dark:bg-[#2c2925]/60"
+                }`}
+              >
+                <span
+                  title="이미지를 최대 3장까지 올릴 수 있습니다. 각 슬롯의 역할을 정한 뒤 분석 버튼을 누르면 해당 역할의 옵션만 채워집니다."
+                  className={`flex-1 cursor-help text-sm font-bold underline decoration-dotted underline-offset-4 decoration-[#9f9b93]/60 dark:decoration-[#8a8479]/60 ${
+                    input.enabled.references === false
+                      ? "text-[#9f9b93] dark:text-[#8a8479]"
+                      : "text-[#1a1a1a] dark:text-[#f5f3ee]"
+                  }`}
+                >
+                  참고 이미지
+                </span>
+                {/* #2, #3 슬롯 토글 chip — #1은 항상 표시이므로 토글 없음 */}
+                {[1, 2].map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleSlot(idx)}
+                    title={activeSlots[idx] ? `슬롯 #${idx + 1} 닫기 (이미지·분석 결과 같이 정리)` : `슬롯 #${idx + 1} 추가`}
+                    className={`min-w-[40px] rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                      activeSlots[idx]
+                        ? "border-[#43089f] bg-[#43089f] text-white dark:border-[#c1b0ff] dark:bg-[#43089f] dark:text-white"
+                        : "border-[#dad4c8] bg-white text-[#55534e] hover:border-[#43089f] hover:text-[#43089f] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#b3aea3]"
+                    }`}
+                  >
+                    #{idx + 1}
+                  </button>
                 ))}
+                <ToggleSwitch
+                  checked={!!input.enabled.references}
+                  onChange={(v) => setEnabled("references", v)}
+                  label={input.enabled.references ? "사용 중" : "사용 안 함"}
+                />
               </div>
-              <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                각 이미지의 역할을 정한 뒤 슬롯 안 분석 버튼을 누르면 그 역할에 해당하는 옵션만 채워집니다.
-              </p>
-            </Section>
-
-
-
-            <Section
-              title="작업 유형"
-              collapsible
-              enabled={input.enabled.workType}
-              onEnabledChange={(v) => setEnabled("workType", v)}
-            >
-              <div className="grid grid-cols-5 gap-2">
-                {WORK_TYPE_OPTIONS.map((w) => (
-                  <ChipSm
-                    key={w.value}
-                    label={w.label}
-                    active={input.workType === w.value}
-                    onClick={() => setField("workType", w.value as WorkType)}
-                  />
-                ))}
+              <div className={`mt-2 ${input.enabled.references === false ? "opacity-40" : ""}`}>
+                <div className="flex flex-col gap-3">
+                  {input.references.map((ref, i) =>
+                    activeSlots[i] ? (
+                      <ReferenceSlot
+                        key={i}
+                        index={i}
+                        value={ref}
+                        onChange={(patch) => setReference(i, patch)}
+                        onAnalyze={() => handleAiAnalyzeImage(i)}
+                        analyzing={analyzingIndex === i}
+                        analyzed={!!ref.src && lastAnalyzedKey[i] === `${ref.src}|${ref.role}`}
+                        description={imageDescriptions[i] ?? ""}
+                        onDescriptionChange={(v) =>
+                          setImageDescriptions((prev) => ({ ...prev, [i]: v }))
+                        }
+                      />
+                    ) : null,
+                  )}
+                </div>
               </div>
-            </Section>
+            </section>
 
-            <OptionPicker
-              label="스타일"
-              hint="이미지의 전체적인 그림 스타일입니다."
-              options={STYLE_OPTIONS}
-              value={input.style}
-              customText={input.styleCustom}
-              onChange={(v, c) => setInput((p) => ({ ...p, style: v, styleCustom: c }))}
-              enabled={input.enabled.style}
-              onEnabledChange={(v) => setEnabled("style", v)}
-            />
 
-            <OptionPicker
-              label="비율"
-              hint="이미지 가로세로 비율입니다."
-              options={ASPECT_RATIO_OPTIONS}
-              value={input.aspectRatio}
-              customText={input.aspectRatioCustom}
-              onChange={(v, c) => setInput((p) => ({ ...p, aspectRatio: v, aspectRatioCustom: c }))}
-              enabled={input.enabled.aspectRatio}
-              onEnabledChange={(v) => setEnabled("aspectRatio", v)}
-            />
 
-            <Section
-              title="빼고 싶은 것"
-              hint="이미지에 나오지 않았으면 하는 요소입니다."
-              collapsible
-              enabled={input.enabled.negative}
-              onEnabledChange={(v) => setEnabled("negative", v)}
-            >
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                {NEGATIVE_OPTIONS.map((n) => (
-                  <CheckChip
-                    key={n.value}
-                    label={n.label}
-                    checked={input.negativeChecks.includes(n.value)}
-                    onChange={() => toggleNegative(n.value)}
-                  />
-                ))}
-              </div>
-              <input
-                type="text"
-                value={input.negativeCustom}
-                onChange={(e) => setField("negativeCustom", e.target.value)}
-                placeholder="직접 입력 (영어 권장 — API 연결 후엔 한글도 가능)"
-                className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
-              />
-            </Section>
-
+            {/* 작업 유형 / 스타일 / 비율은 페이지 상단의 sticky 헤더로 이동되었습니다 (v0.8 D-수정안). */}
             {/* 작업 유형별 옵션 — Section으로 감싸 다른 그룹과 동일 디자인 */}
             {input.workType === "character" && (
               <Section
@@ -581,6 +614,7 @@ export default function HomePage() {
               onSelect={setGptModel}
               content={gptOutput}
               koreanContent={gptOutputKo}
+              langStorageKey="apg.lang.gpt"
             />
             <ModelCard
               title="Nano Banana"
@@ -590,6 +624,7 @@ export default function HomePage() {
               onSelect={setNanoModel}
               content={nanoOutput}
               koreanContent={nanoOutputKo}
+              langStorageKey="apg.lang.nano"
             />
             <ModelCard
               title="Midjourney"
@@ -615,8 +650,8 @@ export default function HomePage() {
           </main>
         </div>
 
-        <footer className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500">
-          v0.6 · 5종 작업 유형 · 17종 스타일 · 모델 12종 · 다크 모드
+        <footer className="mt-8 text-center text-xs text-[#9f9b93] dark:text-[#9f9b93]">
+          v0.8 · 5종 작업 유형 · 17종 스타일 · 모델 12종 · 다크 모드
         </footer>
       </div>
     </div>
@@ -638,7 +673,7 @@ function CharacterOptionsBlock({
         <OptionPicker label="성별" options={GENDER_OPTIONS}
           value={value.gender} customText={value.genderCustom}
           onChange={(v, c) => { set("gender", v); set("genderCustom", c); }} />
-        <OptionPicker label="나이대" options={AGE_OPTIONS}
+        <OptionPicker label="연령" options={AGE_OPTIONS}
           value={value.ageRange} customText={value.ageRangeCustom}
           onChange={(v, c) => { set("ageRange", v); set("ageRangeCustom", c); }} />
       </div>
@@ -816,37 +851,55 @@ function OptionPicker({
         <label
           title={tooltip}
           className={`text-sm font-bold ${
-            isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"
-          } ${tooltip ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-300 dark:decoration-slate-600" : ""}`}
+            isOff ? "text-[#9f9b93] dark:text-[#9f9b93]" : "text-[#55534e] dark:text-[#b3aea3]"
+          } ${tooltip ? "cursor-help underline decoration-dotted underline-offset-4 decoration-[#dad4c8] dark:decoration-[#3a352e]" : ""}`}
         >
           {label}
         </label>
         {showToggle && (
-          <label
-            className="flex shrink-0 cursor-pointer items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => onEnabledChange!(e.target.checked)}
-              className="h-3.5 w-3.5 accent-slate-900 dark:accent-slate-100"
-            />
-            사용
-          </label>
+          <ToggleSwitch
+            checked={!!enabled}
+            onChange={(v) => onEnabledChange!(v)}
+            label={enabled ? "사용 중" : "사용 안 함"}
+          />
         )}
       </div>
       <div className={isOff ? "opacity-40" : ""}>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => (
-          <ChipXs
-            key={o.value}
-            label={o.label}
-            active={value === o.value}
-            title={o.desc}
-            onClick={() => onChange(o.value, customText)}
-          />
-        ))}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {options.map((o) => {
+          const chip = (
+            <ChipXs
+              key={o.value}
+              label={o.label}
+              active={value === o.value}
+              title={o.desc}
+              onClick={() => {
+                // 같은 chip을 다시 누르면 자동으로 토글 (직접 입력 닫기 등)
+                if (value === o.value && o.value !== "auto") {
+                  onChange("auto", "");
+                } else {
+                  onChange(o.value, customText);
+                }
+              }}
+            />
+          );
+          // 직접 입력이 활성 상태이면 chip 바로 옆에 inline 입력칸을 렌더한다.
+          if (o.value === "custom" && isCustom) {
+            return [
+              chip,
+              <input
+                key={`${o.value}-input`}
+                type="text"
+                value={customText}
+                onChange={(e) => onChange(value, e.target.value)}
+                placeholder="영어로 적으면 프롬프트에 반영됩니다"
+                autoFocus
+                className="min-w-[160px] flex-1 rounded-full border border-[#dad4c8] bg-white px-3 py-1.5 text-[11px] outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#f5f3ee] dark:focus:border-[#dad4c8]"
+              />,
+            ];
+          }
+          return chip;
+        })}
         {moreOptions && moreOptions.length > 0 && (
           <button
             type="button"
@@ -854,7 +907,7 @@ function OptionPicker({
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-1.5 text-[11px] transition ${
               showMore
                 ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-300"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                : "border-[#dad4c8] bg-white text-[#1a1a1a] hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
             }`}
           >
             <Plus size={10} /> {showMore ? "더보기 접기" : "더보기"}
@@ -862,27 +915,175 @@ function OptionPicker({
         )}
       </div>
       {showMore && moreOptions && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl bg-slate-50 p-2 dark:bg-slate-800">
+        <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl bg-[#faf9f7] p-2 dark:bg-[#2c2925]">
           {moreOptions.map((o) => (
             <ChipXs
               key={o.value}
               label={o.label}
               active={value === o.value}
               title={o.desc}
-              onClick={() => onChange(o.value, customText)}
+              onClick={() => {
+                if (value === o.value && o.value !== "auto") {
+                  onChange("auto", "");
+                } else {
+                  onChange(o.value, customText);
+                }
+              }}
             />
           ))}
         </div>
       )}
-      {isCustom && (
-        <input
-          type="text"
-          value={customText}
-          onChange={(e) => onChange(value, e.target.value)}
-          placeholder="직접 입력 (영어로 적으면 프롬프트에 반영됩니다)"
-          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:focus:border-slate-300"
+      </div>
+    </div>
+  );
+}
+
+// ===== 스타일 선택 (카테고리화 + 1단계 펼침) =====
+
+function StylePicker({
+  value,
+  customText,
+  onChange,
+  enabled,
+  onEnabledChange,
+}: {
+  value: string;
+  customText: string;
+  onChange: (value: string, customText: string) => void;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+}) {
+  const isOff = !enabled;
+  const autoOption = STYLE_OPTIONS.find((o) => o.value === "auto");
+  const customOption = STYLE_OPTIONS.find((o) => o.value === "custom");
+  const isCustom = value === "custom";
+
+  // 현재 선택된 스타일이 어느 카테고리에 속하는지 찾는다
+  const findCategoryOf = (v: string): StyleCategory | null => {
+    for (const cat of STYLE_CATEGORIES) {
+      if (cat.styles.includes(v)) return cat.key;
+    }
+    return null;
+  };
+
+  const initialOpen = findCategoryOf(value);
+  const [openCategory, setOpenCategory] = useState<StyleCategory | null>(initialOpen);
+
+  // value가 외부에서 바뀌어 다른 카테고리에 속하면 자동으로 그 카테고리를 펼친다
+  useEffect(() => {
+    const cat = findCategoryOf(value);
+    if (cat) setOpenCategory(cat);
+  }, [value]);
+
+  const selectedOption = STYLE_OPTIONS.find((o) => o.value === value);
+  const tooltip = selectedOption?.desc ?? "이미지의 전체적인 그림 스타일입니다.";
+
+  const handleCategoryClick = (cat: StyleCategory) => {
+    setOpenCategory((prev) => (prev === cat ? null : cat));
+  };
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <label
+          title={tooltip}
+          className={`text-sm font-bold ${
+            isOff ? "text-[#9f9b93] dark:text-[#9f9b93]" : "text-[#55534e] dark:text-[#b3aea3]"
+          } cursor-help underline decoration-dotted underline-offset-4 decoration-[#dad4c8] dark:decoration-[#3a352e]`}
+        >
+          스타일
+        </label>
+        <ToggleSwitch
+          checked={enabled}
+          onChange={(v) => onEnabledChange(v)}
+          label={enabled ? "사용 중" : "사용 안 함"}
         />
-      )}
+      </div>
+      <div className={isOff ? "opacity-40" : ""}>
+        {/* 1단계: 자동 / 카테고리 4개 / 직접 입력 */}
+        <div className="flex flex-wrap gap-1.5">
+          {autoOption && (
+            <ChipXs
+              label={autoOption.label}
+              active={value === "auto"}
+              title={autoOption.desc}
+              onClick={() => onChange("auto", customText)}
+            />
+          )}
+          {STYLE_CATEGORIES.map((cat) => {
+            const containsSelected = cat.styles.includes(value);
+            const isOpen = openCategory === cat.key;
+            return (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => handleCategoryClick(cat.key)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] transition ${
+                  containsSelected
+                    ? "border-[#078a52] bg-[#078a52] text-white dark:border-[#84e7a5] dark:bg-[#078a52] dark:text-white"
+                    : isOpen
+                    ? "border-[#43089f] bg-[#ede4ff] text-[#43089f] dark:border-[#c1b0ff] dark:bg-[#43089f]/30 dark:text-[#c1b0ff]"
+                    : "border-[#dad4c8] bg-white text-[#1a1a1a] hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
+                }`}
+              >
+                <ChevronDown size={10} className={`transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+                {cat.label}
+              </button>
+            );
+          })}
+          {customOption && (
+            <ChipXs
+              label={customOption.label}
+              active={value === "custom"}
+              title={customOption.desc}
+              onClick={() => {
+                // 이미 직접 입력 상태면 다시 누를 때 자동으로 닫기
+                if (value === "custom") {
+                  onChange("auto", "");
+                } else {
+                  onChange("custom", customText);
+                }
+              }}
+            />
+          )}
+          {/* 직접 입력 활성 시 chip 옆 inline 입력칸 */}
+          {isCustom && (
+            <input
+              type="text"
+              value={customText}
+              onChange={(e) => onChange("custom", e.target.value)}
+              placeholder="영어로 적으면 프롬프트에 반영됩니다"
+              autoFocus
+              className="min-w-[180px] flex-1 rounded-full border border-[#dad4c8] bg-white px-3 py-1.5 text-[11px] outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#f5f3ee] dark:focus:border-[#dad4c8]"
+            />
+          )}
+        </div>
+
+        {/* 2단계: 펼친 카테고리의 스타일 */}
+        {openCategory && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl bg-[#faf9f7] p-2 dark:bg-[#2c2925]">
+            {STYLE_CATEGORIES.find((c) => c.key === openCategory)?.styles.map((styleValue) => {
+              const opt = STYLE_OPTIONS.find((o) => o.value === styleValue);
+              if (!opt) return null;
+              return (
+                <ChipXs
+                  key={opt.value}
+                  label={opt.label}
+                  active={value === opt.value}
+                  title={opt.desc}
+                  onClick={() => {
+                    if (value === opt.value) {
+                      onChange("auto", "");
+                    } else {
+                      onChange(opt.value, customText);
+                    }
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -897,6 +1098,8 @@ function ReferenceSlot({
   onAnalyze,
   analyzing,
   analyzed,
+  description,
+  onDescriptionChange,
 }: {
   index: number;
   value: ReferenceImageInput;
@@ -904,15 +1107,39 @@ function ReferenceSlot({
   onAnalyze: () => void;
   analyzing: boolean;
   analyzed: boolean;
+  /** AI가 분석해서 만든 한국어 설명 (편집 가능). */
+  description: string;
+  onDescriptionChange: (v: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
+  const [descCopied, setDescCopied] = useState(false);
+
+  // 분석이 완료되면 결과 영역을 자동으로 펼친다.
+  // description이 비어 있어도 분석 자체가 끝났으면 펼쳐서 사용자가 상태를 알 수 있게 한다.
+  useEffect(() => {
+    if (analyzed) setShowDescription(true);
+    else setShowDescription(false);
+  }, [analyzed]);
+
+  const applyImage = async (raw: string) => {
+    try {
+      const resized = await resizeImageDataUrl(raw, 1024);
+      onChange({ src: resized });
+    } catch {
+      onChange({ src: raw });
+    }
+  };
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = (ev) => onChange({ src: ev.target?.result as string });
+    reader.onload = (ev) => {
+      const raw = ev.target?.result as string;
+      if (raw) void applyImage(raw);
+    };
     reader.readAsDataURL(file);
   };
 
@@ -922,84 +1149,189 @@ function ReferenceSlot({
     const file = e.dataTransfer.files?.[0];
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = (ev) => onChange({ src: ev.target?.result as string });
+    reader.onload = (ev) => {
+      const raw = ev.target?.result as string;
+      if (raw) void applyImage(raw);
+    };
     reader.readAsDataURL(file);
   };
 
+  // 클립보드 붙여넣기(Ctrl+V) — 슬롯에 포커스가 있을 때 클립보드의 이미지를 자동 첨부.
+  // 미드저니 sref와 동일한 워크플로우.
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const raw = ev.target?.result as string;
+          if (raw) void applyImage(raw);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  };
+
+  const handleCopyDescription = async () => {
+    if (!description) return;
+    try {
+      await navigator.clipboard.writeText(description);
+      setDescCopied(true);
+      setTimeout(() => setDescCopied(false), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  const roleLabel =
+    REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? value.role;
+
   return (
-    <div className="rounded-xl border border-slate-200 p-2 dark:border-slate-700">
-      <div className="mb-1.5 flex items-center justify-between">
-        <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">#{index + 1}</div>
-        {value.src && (
-          <button
-            type="button"
-            onClick={() => onChange({ src: null })}
-            title="제거"
-            aria-label="이미지 제거"
-            className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/80 text-white hover:bg-slate-900 dark:bg-slate-100/80 dark:text-slate-900 dark:hover:bg-slate-100"
+    <div
+      tabIndex={0}
+      onPaste={handlePaste}
+      className="rounded-2xl border border-[#dad4c8] p-3 outline-none transition focus:border-[#43089f] focus:ring-2 focus:ring-[#43089f]/30 dark:border-[#3a352e] dark:focus:border-[#c1b0ff] dark:focus:ring-[#c1b0ff]/20"
+    >
+      <div className="flex gap-3">
+        {/* 좌측: 이미지 영역 (고정 폭) — #N 라벨/X 버튼은 이미지 위 오버레이로 통합해 공간 절약 */}
+        <div className="w-[100px] shrink-0">
+          <div
+            className="relative"
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
+            onDrop={handleDrop}
           >
-            <X size={10} />
-          </button>
-        )}
-      </div>
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
-        onDrop={handleDrop}
-      >
-        {!value.src ? (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="클릭 또는 이미지를 끌어다 놓기"
-            className={`flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed transition ${
-              dragOver
-                ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-300"
-                : "border-slate-400 bg-slate-200 text-slate-600 hover:bg-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
-            }`}
-          >
-            <ImagePlus size={16} />
-            <span className="text-[10px] font-semibold">클릭/드롭</span>
-          </button>
-        ) : (
-          <div className="aspect-square w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value.src} alt={`참고 이미지 ${index + 1}`} className="h-full w-full object-contain" />
+            {!value.src ? (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="클릭, 끌어다 놓기, 또는 슬롯에 포커스 후 Ctrl+V로 붙여넣기"
+                className={`flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed transition ${
+                  dragOver
+                    ? "border-[#43089f] bg-[#ede4ff] text-[#43089f] dark:border-[#c1b0ff] dark:bg-[#43089f]/30 dark:text-[#c1b0ff]"
+                    : "border-[#dad4c8] bg-[#faf9f7] text-[#55534e] hover:bg-[#eee9df] dark:border-[#3a352e] dark:bg-[#1c1a17] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
+                }`}
+              >
+                <ImagePlus size={20} />
+                <span className="text-[10px] font-semibold leading-tight">클릭/드롭<br/>Ctrl+V</span>
+              </button>
+            ) : (
+              <div className="aspect-square w-full overflow-hidden rounded-lg bg-[#eee9df] dark:bg-[#2c2925]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={value.src} alt={`참고 이미지 ${index + 1}`} className="h-full w-full object-contain" />
+              </div>
+            )}
+            {/* #N 작은 라벨 — 이미지 좌상단 모서리 오버레이 */}
+            <span className="pointer-events-none absolute left-1 top-1 inline-flex items-center rounded-md bg-[#1a1a1a]/70 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              #{index + 1}
+            </span>
+            {/* 이미지 제거 X — 이미지가 있을 때만 우상단 오버레이 */}
+            {value.src && (
+              <button
+                type="button"
+                onClick={() => onChange({ src: null })}
+                title="이미지 제거"
+                aria-label="이미지 제거"
+                className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#1a1a1a]/80 text-white hover:bg-[#1a1a1a]"
+              >
+                <X size={10} />
+              </button>
+            )}
           </div>
-        )}
-      </div>
-      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
-      <select
-        value={value.role}
-        onChange={(e) => onChange({ role: e.target.value })}
-        title="이미지의 역할 — 분석은 이 역할의 옵션만 채웁니다."
-        className="mt-1.5 w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-      >
-        {REFERENCE_ROLE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      {value.src && (
-        <button
-          type="button"
-          onClick={onAnalyze}
-          disabled={analyzing}
-          title={analyzed ? "이 역할로 이미 분석했습니다. 다시 누르면 재분석합니다." : `이 이미지를 '${REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? value.role}'로 분석해 해당 옵션만 채웁니다 (1회 약 2~4원).`}
-          className={`mt-1.5 inline-flex w-full items-center justify-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-            analyzed
-              ? "border-slate-300 bg-slate-50 text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60"
-          }`}
-        >
-          {analyzing ? (
-            <><Wand2 size={11} className="animate-spin" /> 분석 중...</>
-          ) : analyzed ? (
-            <><Check size={11} /> 분석됨</>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+        </div>
+
+        {/* 우측: 역할 선택 + 분석 버튼 + AI 한국어 설명 */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <select
+            value={value.role}
+            onChange={(e) => onChange({ role: e.target.value })}
+            title="이미지의 역할 — 분석은 이 역할의 옵션만 채웁니다."
+            className="w-full rounded-md border border-[#dad4c8] bg-white px-2 py-1.5 text-xs outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#f5f3ee]"
+          >
+            {REFERENCE_ROLE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {value.src ? (
+            <button
+              type="button"
+              onClick={onAnalyze}
+              disabled={analyzing}
+              title={analyzed ? "이 역할로 이미 분석했습니다. 다시 누르면 재분석합니다." : `이 이미지를 '${roleLabel}'로 분석해 해당 옵션만 채웁니다 (1회 약 2~4원).`}
+              className={`clay-hover inline-flex w-full items-center justify-center gap-1 rounded-xl border px-2 py-1.5 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                analyzed
+                  ? "border-[#dad4c8] bg-[#eee9df] text-[#55534e] hover:bg-[#dad4c8] dark:border-[#3a352e] dark:bg-[#2c2925] dark:text-[#b3aea3]"
+                  : "border-[#fc7981] bg-[#fff0f1] text-[#1a1a1a] hover:bg-[#ffe1e3] dark:border-[#fc7981] dark:bg-[#fc7981]/15 dark:text-[#f5f3ee] dark:hover:bg-[#fc7981]/25"
+              }`}
+            >
+              {analyzing ? (
+                <><Wand2 size={12} className="animate-spin" /> AI 분석 중...</>
+              ) : analyzed ? (
+                <><Check size={12} /> AI 분석됨 — 재분석</>
+              ) : (
+                <><Wand2 size={12} /> {roleLabel}로 AI 분석 (~3원)</>
+              )}
+            </button>
           ) : (
-            <><Wand2 size={11} /> {REFERENCE_ROLE_OPTIONS.find((o) => o.value === value.role)?.label ?? "분석"}로 분석</>
+            <div className="rounded-md border border-dashed border-[#dad4c8] px-2 py-1.5 text-center text-[11px] text-[#9f9b93] dark:border-[#3a352e] dark:text-[#9f9b93]">
+              이미지를 첨부하면 분석할 수 있어요
+            </div>
           )}
-        </button>
-      )}
+          {value.src && analyzed && (
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setShowDescription((s) => !s)}
+                className="inline-flex w-full items-center gap-1 rounded-md px-1 py-0.5 text-left text-[11px] font-semibold text-[#55534e] hover:bg-[#eee9df] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
+                aria-expanded={showDescription}
+              >
+                <ChevronDown
+                  size={12}
+                  className={`shrink-0 text-[#9f9b93] transition-transform ${showDescription ? "" : "-rotate-90"}`}
+                />
+                AI가 본 이미지
+              </button>
+              {showDescription && (
+                <div className="space-y-1 rounded-md bg-[#faf9f7] p-2 dark:bg-[#2c2925]">
+                  {description ? (
+                    <textarea
+                      value={description}
+                      onChange={(e) => onDescriptionChange(e.target.value)}
+                      rows={5}
+                      className="w-full resize-y rounded border border-[#dad4c8] bg-white p-2 text-[11px] leading-relaxed text-[#1a1a1a] outline-none focus:border-[#43089f] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee] dark:focus:border-[#dad4c8]"
+                    />
+                  ) : (
+                    <div className="rounded border border-dashed border-[#dad4c8] bg-white p-2 text-[11px] leading-relaxed text-[#9f9b93] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#9f9b93]">
+                      AI 설명이 비어 있습니다. 재분석을 시도하거나, 역할을 다른 값으로 바꿔서 다시 분석해 보세요. (브라우저 콘솔 F12 → Console 탭에서 <code className="rounded bg-[#eee9df] px-1 py-0.5 text-[10px] dark:bg-[#2c2925]">[AI image #N result]</code> 로그도 확인할 수 있어요)
+                    </div>
+                  )}
+                  {description && (
+                    <button
+                      type="button"
+                      onClick={handleCopyDescription}
+                      className={`inline-flex w-full items-center justify-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold transition ${
+                        descCopied
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
+                          : "border-[#dad4c8] bg-white text-[#1a1a1a] hover:bg-[#eee9df] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
+                      }`}
+                    >
+                      {descCopied ? <Check size={11} /> : <Copy size={11} />}
+                      {descCopied ? "복사됨" : "복사"}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1012,19 +1344,19 @@ function SummaryCard({ summary, koreanMemo }: { summary: ReturnType<typeof build
   const hasMore = summary.rows.length > 12;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="clay-shadow rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
       <div className="mb-3">
-        <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">정리된 요청 요약</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400">선택한 옵션과 입력 내용을 한눈에 확인합니다 (복사 안 됨).</p>
+        <h3 className="text-base font-bold text-[#1a1a1a] dark:text-[#f5f3ee]">정리된 요청 요약</h3>
+        <p className="text-xs text-[#9f9b93] dark:text-[#8a8479]">선택한 옵션과 입력 내용을 한눈에 확인합니다 (복사 안 됨).</p>
       </div>
       {summary.rows.length === 0 ? (
-        <p className="text-sm text-slate-500">아직 선택된 옵션이 없습니다.</p>
+        <p className="text-sm text-[#9f9b93]">아직 선택된 옵션이 없습니다.</p>
       ) : (
         <div className="grid gap-x-6 gap-y-1 md:grid-cols-2">
           {visibleRows.map((row, i) => (
-            <div key={i} className="flex items-baseline gap-3 border-b border-slate-100 py-1.5 dark:border-slate-800">
-              <span className="w-32 shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{row.label}</span>
-              <span className="flex-1 break-words text-sm text-slate-800 dark:text-slate-200">{row.value}</span>
+            <div key={i} className="flex items-baseline gap-3 border-b border-dashed border-[#eee9df] py-1.5 dark:border-[#2c2925]">
+              <span className="w-32 shrink-0 text-xs font-semibold text-[#9f9b93] dark:text-[#8a8479]">{row.label}</span>
+              <span className="flex-1 break-words text-sm text-[#1a1a1a] dark:text-[#f5f3ee]">{row.value}</span>
             </div>
           ))}
         </div>
@@ -1033,25 +1365,15 @@ function SummaryCard({ summary, koreanMemo }: { summary: ReturnType<typeof build
         <button
           type="button"
           onClick={() => setShowAll((s) => !s)}
-          className="mt-2 text-xs font-semibold text-blue-600 hover:underline dark:text-blue-400"
+          className="mt-2 text-xs font-semibold text-[#078a52] hover:underline dark:text-[#84e7a5]"
         >
           {showAll ? "접기" : `더보기 (+${summary.rows.length - 12}개)`}
         </button>
       )}
 
-      {summary.negative.tags.length > 0 && (
-        <div className="mt-3">
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{summary.negative.label}</div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {summary.negative.tags.map((t, i) => (
-              <Tag key={i}>{t}</Tag>
-            ))}
-          </div>
-        </div>
-      )}
       {summary.references.tags.length > 0 && (
         <div className="mt-3">
-          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{summary.references.label}</div>
+          <div className="text-xs font-semibold text-[#9f9b93] dark:text-[#9f9b93]">{summary.references.label}</div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {summary.references.tags.map((t, i) => (
               <Tag key={i}>{t}</Tag>
@@ -1061,11 +1383,11 @@ function SummaryCard({ summary, koreanMemo }: { summary: ReturnType<typeof build
       )}
 
       {koreanMemo.trim() && (
-        <details className="mt-3 rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-800">
-          <summary className="cursor-pointer font-semibold text-slate-600 dark:text-slate-300">
+        <details className="mt-3 rounded-xl bg-[#faf9f7] p-3 text-xs dark:bg-[#2c2925]">
+          <summary className="cursor-pointer font-semibold text-[#55534e] dark:text-[#b3aea3]">
             원본 한글 메모 (참고용 · 복사 안 됨)
           </summary>
-          <p className="mt-2 whitespace-pre-wrap text-slate-700 dark:text-slate-300">{koreanMemo}</p>
+          <p className="mt-2 whitespace-pre-wrap text-[#1a1a1a] dark:text-[#b3aea3]">{koreanMemo}</p>
         </details>
       )}
     </div>
@@ -1080,6 +1402,7 @@ function ModelCard({
   onSelect,
   content,
   koreanContent,
+  langStorageKey,
 }: {
   title: string;
   hint: string;
@@ -1089,13 +1412,15 @@ function ModelCard({
   content: string;
   /** 정의되어 있으면 카드에 한/영 토글이 노출되고, 표시 중인 언어로 복사됩니다. */
   koreanContent?: string;
+  /** 정의되어 있으면 localStorage에 마지막 선택 언어를 저장/복원합니다. */
+  langStorageKey?: string;
 }) {
   return (
-    <CardShell title={title} hint={hint} content={content} koreanContent={koreanContent}>
+    <CardShell title={title} hint={hint} content={content} koreanContent={koreanContent} langStorageKey={langStorageKey}>
       <select
         value={selected}
         onChange={(e) => onSelect(e.target.value as ModelKey)}
-        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:border-slate-900 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+        className="rounded-xl border border-[#dad4c8] bg-white px-3 py-2 text-sm font-medium text-[#1a1a1a] hover:bg-[#faf9f7] focus:border-[#43089f] focus:outline-none dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
       >
         {options.map((opt) => (
           <option key={opt} value={opt}>{MODEL_LABEL[opt]}</option>
@@ -1114,16 +1439,34 @@ function CardShell({
   hint,
   content,
   koreanContent,
+  langStorageKey,
   children,
 }: {
   title: string;
   hint: string;
   content: string;
   koreanContent?: string;
+  /** localStorage에 마지막 선택 언어를 저장/복원할 키. */
+  langStorageKey?: string;
   children?: React.ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
-  const [lang, setLang] = useState<"en" | "ko">("en");
+  // GPT/Nano 카드는 한국어가 기본 — localStorage에 저장된 값이 있으면 우선
+  const [lang, setLang] = useState<"en" | "ko">(koreanContent ? "ko" : "en");
+  // mount 시 localStorage 값 적용
+  useEffect(() => {
+    if (!langStorageKey) return;
+    try {
+      const saved = localStorage.getItem(langStorageKey);
+      if (saved === "en" || saved === "ko") setLang(saved);
+    } catch {}
+  }, [langStorageKey]);
+  const setLangPersist = (next: "en" | "ko") => {
+    setLang(next);
+    if (langStorageKey) {
+      try { localStorage.setItem(langStorageKey, next); } catch {}
+    }
+  };
   const displayed = lang === "ko" && koreanContent ? koreanContent : content;
   useEffect(() => { setCopied(false); }, [displayed]);
 
@@ -1145,32 +1488,32 @@ function CardShell({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div className="clay-shadow rounded-[24px] border border-[#dad4c8] bg-white p-5 dark:border-[#3a352e] dark:bg-[#2a2723]">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{hint}</p>
+          <h3 className="text-base font-bold text-[#1a1a1a] dark:text-[#f5f3ee]">{title}</h3>
+          <p className="text-xs text-[#9f9b93] dark:text-[#8a8479]">{hint}</p>
         </div>
         {koreanContent && (
-          <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+          <div className="inline-flex overflow-hidden rounded-full border border-[#dad4c8] dark:border-[#3a352e]">
             <button
               type="button"
-              onClick={() => setLang("en")}
+              onClick={() => setLangPersist("en")}
               className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
                 lang === "en"
-                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  ? "bg-[#01418d] text-white dark:bg-[#01418d] dark:text-white"
+                  : "bg-white text-[#55534e] hover:bg-[#faf9f7] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
               }`}
             >
               EN
             </button>
             <button
               type="button"
-              onClick={() => setLang("ko")}
+              onClick={() => setLangPersist("ko")}
               className={`px-2.5 py-1.5 text-[11px] font-semibold transition ${
                 lang === "ko"
-                  ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                  : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                  ? "bg-[#01418d] text-white dark:bg-[#01418d] dark:text-white"
+                  : "bg-white text-[#55534e] hover:bg-[#faf9f7] dark:bg-[#2a2723] dark:text-[#b3aea3] dark:hover:bg-[#2c2925]"
               }`}
             >
               한국어
@@ -1179,14 +1522,14 @@ function CardShell({
         )}
         {children}
       </div>
-      <div className="relative min-h-[120px] whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-4 pr-24 font-mono text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+      <div className="relative min-h-[120px] whitespace-pre-wrap break-words rounded-2xl bg-[#faf9f7] p-4 pr-24 font-mono text-sm leading-6 text-[#1a1a1a] dark:bg-[#1c1a17] dark:text-[#f5f3ee]">
         <button
           type="button"
           onClick={handleCopy}
-          className={`absolute right-2 top-2 inline-flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+          className={`clay-hover absolute right-2 top-2 inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${
             copied
-              ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900 dark:text-emerald-300"
-              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              ? "border-[#078a52] bg-[#dffce5] text-[#02492a] dark:border-[#84e7a5] dark:bg-[#02492a] dark:text-[#84e7a5]"
+              : "border-[#dad4c8] bg-white text-[#1a1a1a] hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee] dark:hover:bg-[#2c2925]"
           }`}
         >
           {copied ? <Check size={13} /> : <Copy size={13} />}
@@ -1224,18 +1567,18 @@ function Section({
   const isOff = enabled === false;
   const showToggle = enabled !== undefined && onEnabledChange !== undefined;
 
-  const headerClass = `flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
+  const headerClass = `flex items-center gap-2 rounded-2xl border px-3 py-2.5 transition ${
     isOff
-      ? "border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800/80"
-      : "border-slate-200 bg-slate-50 dark:border-slate-700/60 dark:bg-slate-800/50"
-  } ${collapsible ? "hover:bg-slate-100 dark:hover:bg-slate-800" : ""}`;
+      ? "border-[#dad4c8] bg-[#eee9df]/60 dark:border-[#3a352e] dark:bg-[#2c2925]/80"
+      : "border-[#dad4c8] bg-[#eee9df] dark:border-[#3a352e] dark:bg-[#2c2925]/60"
+  } ${collapsible ? "hover:bg-[#e0d9c8] dark:hover:bg-[#352f29]" : ""}`;
 
   const titleText = (
     <span
       title={hint}
       className={`text-sm font-bold ${
-        isOff ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
-      } ${hint ? "cursor-help underline decoration-dotted underline-offset-4 decoration-slate-400/60 dark:decoration-slate-500/60" : ""}`}
+        isOff ? "text-[#9f9b93] dark:text-[#8a8479]" : "text-[#1a1a1a] dark:text-[#f5f3ee]"
+      } ${hint ? "cursor-help underline decoration-dotted underline-offset-4 decoration-[#9f9b93]/60 dark:decoration-[#8a8479]/60" : ""}`}
     >
       {title}
     </span>
@@ -1253,7 +1596,7 @@ function Section({
           >
             <ChevronDown
               size={18}
-              className={`shrink-0 text-slate-500 transition-transform ${open ? "" : "-rotate-90"}`}
+              className={`shrink-0 text-[#9f9b93] transition-transform ${open ? "" : "-rotate-90"}`}
             />
             {titleText}
           </button>
@@ -1299,8 +1642,8 @@ function ToggleSwitch({
       <span
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
           checked
-            ? "bg-emerald-500 dark:bg-emerald-500"
-            : "bg-slate-300 dark:bg-slate-600"
+            ? "bg-[#01418d] dark:bg-[#01418d]"
+            : "bg-[#dad4c8] dark:bg-[#3a352e]"
         }`}
       >
         <span
@@ -1310,7 +1653,7 @@ function ToggleSwitch({
         />
       </span>
       {label && (
-        <span className={`text-[10px] font-semibold ${checked ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}>
+        <span className={`text-[10px] font-semibold ${checked ? "text-[#01418d] dark:text-[#87b7f5]" : "text-[#9f9b93] dark:text-[#8a8479]"}`}>
           {label}
         </span>
       )}
@@ -1325,8 +1668,8 @@ function ChipSm({ label, active, onClick }: { label: string; active: boolean; on
       onClick={onClick}
       className={`w-full rounded-full border px-2 py-2 text-sm transition ${
         active
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+          ? "clay-pressed border-[#078a52] bg-[#078a52] text-white dark:border-[#84e7a5] dark:bg-[#078a52] dark:text-white"
+          : "clay-hover border-[#dad4c8] bg-white text-[#1a1a1a] hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee] dark:hover:bg-[#2c2925]"
       }`}
     >
       {label}
@@ -1350,10 +1693,10 @@ function ChipXs({
       type="button"
       onClick={onClick}
       title={title}
-      className={`rounded-full border px-2.5 py-1.5 text-[11px] transition ${
+      className={`min-w-[68px] rounded-full border px-2.5 py-1.5 text-center text-[11px] transition ${
         active
-          ? "border-slate-900 bg-slate-900 text-white shadow-sm dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+          ? "clay-pressed border-[#078a52] bg-[#078a52] text-white dark:border-[#84e7a5] dark:bg-[#078a52] dark:text-white"
+          : "border-[#dad4c8] bg-white text-[#1a1a1a] hover:-translate-y-0.5 hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee] dark:hover:bg-[#2c2925]"
       }`}
     >
       {label}
@@ -1371,12 +1714,12 @@ function CheckChip({
   onChange: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+    <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-[#dad4c8] bg-white px-3 py-2 text-xs hover:bg-[#faf9f7] dark:border-[#3a352e] dark:bg-[#2a2723] dark:hover:bg-[#2c2925]">
       <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-4 w-4 accent-slate-900 dark:accent-slate-100"
+        className="h-4 w-4 accent-[#078a52] dark:accent-[#84e7a5]"
       />
       <span className="truncate">{label}</span>
     </label>
@@ -1385,7 +1728,7 @@ function CheckChip({
 
 function Tag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+    <span className="inline-flex items-center rounded-full bg-[#eee9df] px-2.5 py-1 text-[11px] font-medium text-[#1a1a1a] dark:bg-[#2c2925] dark:text-[#b3aea3]">
       {children}
     </span>
   );

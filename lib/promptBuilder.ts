@@ -12,7 +12,6 @@ import {
   WORK_TYPE_KEYWORD,
   STYLE_OPTIONS,
   ASPECT_RATIO_OPTIONS,
-  NEGATIVE_OPTIONS,
   GENDER_OPTIONS,
   AGE_OPTIONS,
   BODY_OPTIONS,
@@ -131,7 +130,6 @@ export interface EnabledFlags {
   workType: boolean;
   style: boolean;
   aspectRatio: boolean;
-  negative: boolean;
   references: boolean;
   character: boolean;
   background: boolean;
@@ -142,7 +140,6 @@ export const DEFAULT_ENABLED: EnabledFlags = {
   workType: true,
   style: true,
   aspectRatio: true,
-  negative: true,
   references: true,
   character: true,
   background: true,
@@ -157,8 +154,6 @@ export interface PromptInput {
   styleCustom: string;
   aspectRatio: string;
   aspectRatioCustom: string;
-  negativeChecks: string[];
-  negativeCustom: string;
   character: CharacterInput;
   background: BackgroundInput;
   asset: AssetInput;
@@ -215,8 +210,6 @@ export const DEFAULT_INPUT: PromptInput = {
   styleCustom: "",
   aspectRatio: "1:1",
   aspectRatioCustom: "",
-  negativeChecks: ["text", "logo", "watermark", "distorted_hand"],
-  negativeCustom: "",
   character: EMPTY_CHARACTER,
   background: EMPTY_BACKGROUND,
   asset: EMPTY_ASSET,
@@ -347,18 +340,6 @@ function collectAssetTokens(a: AssetInput, workType: WorkType): string[] {
   return out;
 }
 
-function collectNegatives(input: PromptInput): string[] {
-  if (!input.enabled.negative) return [];
-  const out: string[] = [];
-  for (const v of input.negativeChecks) {
-    const item = NEGATIVE_OPTIONS.find((o) => o.value === v);
-    if (item && item.en) out.push(item.en);
-  }
-  const t = (input.negativeCustom ?? "").trim();
-  if (t && !containsKorean(t)) out.push(`no ${t}`);
-  return out;
-}
-
 function collectMainTokens(input: PromptInput): string[] {
   const en = input.enabled;
   switch (input.workType) {
@@ -395,9 +376,7 @@ function buildGptImage(input: PromptInput): string {
     : "an illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
-  const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
-  const refs = activeReferences(input);
 
   const sentences: string[] = [];
   sentences.push(`Create ${work}.`);
@@ -426,16 +405,11 @@ function buildGptImage(input: PromptInput): string {
 
   // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 ChatGPT/도구에 이미지를 직접 첨부
 
-  // 금지 요소
-  if (negatives.length > 0) {
-    sentences.push(`Important constraints: ${negatives.join(", ")}.`);
-  }
-
-  sentences.push("Keep the result production-ready for game art use, with clean edges and consistent lighting.");
+  sentences.push("Keep the result production-ready, with clean edges and consistent lighting.");
   return sentences.join(" ");
 }
 
-function buildNanoBanana(input: PromptInput, model: ModelKey): string {
+function buildNanoBanana(input: PromptInput, _model: ModelKey): string {
   // Google 공식 권장에 따라 "자연어 서술 문장"으로 빌드합니다.
   // (구조형 라벨 Goal:/Subject:/Style: 등은 Nano Banana에서 비권장)
   const work = input.enabled.workType
@@ -443,7 +417,6 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
     : "an illustration";
   const style = collectStyle(input);
   const main = collectMainTokens(input);
-  const negatives = collectNegatives(input);
   const eng = englishSupplementClean(input);
 
   const sentences: string[] = [];
@@ -457,7 +430,7 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
     sentences.push(restStyle ? `${cap} with ${restStyle}.` : `${cap}.`);
   }
 
-  // 2. 메인 묘사: work는 이미 "a game character illustration" 같이 'a'로 시작하므로
+  // 2. 메인 묘사: work는 이미 "a character illustration" 같이 'a'로 시작하므로
   //    첫 글자만 대문자화 (이중 'A a' 방지)
   const workCap = work.charAt(0).toUpperCase() + work.slice(1);
   if (main.length > 0) {
@@ -478,20 +451,8 @@ function buildNanoBanana(input: PromptInput, model: ModelKey): string {
     sentences.push("Use a clear focal point and balanced layout.");
   }
 
-  // 모델별 강조점 (capability 차등)
-  if (model === "nano_banana_pro") {
-    sentences.push("Render in 4K resolution with intricate details and professional print-ready quality. Render any text exactly as specified, with multilingual support enabled.");
-  } else if (model === "nano_banana_2") {
-    sentences.push("Render in 2K or higher resolution with refined detail and precise aspect ratio. Maintain a coherent, polished result.");
-  } else {
-    sentences.push("Render in commercial game asset quality with clean, readable design.");
-  }
-
-  // 회피 요소 — "no " / "avoid " 접두사 제거하여 "Avoid no text" 같은 이중부정 방지
-  if (negatives.length > 0) {
-    const cleaned = negatives.map((n) => n.replace(/^no /i, "").replace(/^avoid /i, ""));
-    sentences.push(`Avoid ${cleaned.join(", ")}.`);
-  }
+  // 모델별 해상도/capability 자동 안내는 제거됨 (v0.8).
+  // 사용자가 원하면 영어 보충 입력에 "4K resolution" 등을 직접 적어 통제한다.
 
   return sentences.join(" ");
 }
@@ -528,13 +489,12 @@ function buildNiji(input: PromptInput, _model: ModelKey): string {
   for (const t of main) keywords.push(t);
   if (eng) keywords.push(eng);
   if (style) keywords.push(style);
-  keywords.push("clean character silhouette", "polished anime game illustration");
+  keywords.push("clean character silhouette", "polished anime illustration");
 
   return keywords.join(", ").replace(/\s+/g, " ").trim();
 }
 
-function buildRevision(input: PromptInput): string {
-  const negatives = collectNegatives(input);
+function buildRevision(_input: PromptInput): string {
   const lines: string[] = [];
   lines.push("Keep:");
   lines.push("- The main subject, overall style, and core composition.");
@@ -544,16 +504,12 @@ function buildRevision(input: PromptInput): string {
   lines.push("- Make the image cleaner, more readable, and more polished.");
   lines.push("");
   lines.push("Remove:");
-  if (negatives.length > 0) {
-    for (const n of negatives) lines.push(`- ${n.replace(/^no /, "")}`);
-  } else {
-    lines.push("- text");
-    lines.push("- logos");
-    lines.push("- visual noise");
-    lines.push("- messy textures");
-    lines.push("- distorted hands");
-    lines.push("- unwanted extra objects");
-  }
+  lines.push("- text");
+  lines.push("- logos");
+  lines.push("- visual noise");
+  lines.push("- messy textures");
+  lines.push("- distorted hands");
+  lines.push("- unwanted extra objects");
   lines.push("");
   lines.push("Do not change:");
   lines.push("- Main subject");
@@ -577,7 +533,6 @@ export interface SummaryTags {
 
 export interface PromptSummary {
   rows: SummaryRow[];
-  negative: SummaryTags;
   references: SummaryTags;
 }
 
@@ -604,7 +559,7 @@ export function buildSummary(input: PromptInput): PromptSummary {
     const gender = resolveOptionLabel(GENDER_OPTIONS, c.gender, c.genderCustom);
     const age = resolveOptionLabel(AGE_OPTIONS, c.ageRange, c.ageRangeCustom);
     const ga = [gender, age].filter(Boolean).join(" / ");
-    if (ga) rows.push({ label: "성별 / 나이대", value: ga });
+    if (ga) rows.push({ label: "성별 / 연령", value: ga });
 
     const body = resolveOptionLabel(BODY_OPTIONS, c.bodyType, c.bodyTypeCustom);
     if (body) rows.push({ label: "체형", value: body });
@@ -692,16 +647,6 @@ export function buildSummary(input: PromptInput): PromptSummary {
   const eng = englishSupplementClean(input);
   if (eng) rows.push({ label: "영어 보충", value: eng });
 
-  const negTags: string[] = [];
-  if (input.enabled.negative) {
-    for (const v of input.negativeChecks) {
-      const lbl = NEGATIVE_OPTIONS.find((o) => o.value === v)?.label;
-      if (lbl) negTags.push(lbl);
-    }
-    const negCustom = (input.negativeCustom ?? "").trim();
-    if (negCustom) negTags.push(negCustom);
-  }
-
   const refTags: string[] = [];
   if (input.enabled.references) {
     input.references.forEach((r, i) => {
@@ -713,7 +658,6 @@ export function buildSummary(input: PromptInput): PromptSummary {
 
   return {
     rows,
-    negative: { label: "빼고 싶은 것", tags: negTags },
     references: { label: "참고 이미지", tags: refTags },
   };
 }
@@ -883,24 +827,13 @@ export function buildGptImageKorean(input: PromptInput): string {
   // 참고 이미지
   // 참고 이미지: 텍스트로 안내하지 않음 — 사용자가 ChatGPT 등에 이미지를 직접 첨부
 
-  if (en.negative) {
-    const negs = input.negativeChecks
-      .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
-      .filter((x): x is string => !!x);
-    const customNeg = (input.negativeCustom ?? "").trim();
-    if (customNeg) negs.push(customNeg);
-    if (negs.length > 0) {
-      parts.push(`다음 요소는 빼주세요: ${negs.join(", ")}.`);
-    }
-  }
-
-  parts.push("게임 아트로 바로 쓸 수 있도록 깨끗한 가장자리와 일관된 조명으로 마감해 주세요.");
+  parts.push("바로 쓸 수 있도록 깨끗한 가장자리와 일관된 조명으로 마감해 주세요.");
   return parts.join(" ");
 }
 
 // ===== Nano Banana 한국어 버전 =====
 // Google 권장에 따라 자연어 서술 문장형. 모델별로 capability 강조를 다르게.
-export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): string {
+export function buildNanoBananaKorean(input: PromptInput, _model: ModelKey): string {
   const en = input.enabled;
   const sentences: string[] = [];
 
@@ -937,24 +870,8 @@ export function buildNanoBananaKorean(input: PromptInput, model: ModelKey): stri
     sentences.push("명확한 초점과 균형 잡힌 배치로 구도를 잡아 주세요.");
   }
 
-  // 모델별 capability 강조
-  if (model === "nano_banana_pro") {
-    sentences.push("4K 해상도, 정교한 디테일과 인쇄에 바로 쓸 수 있는 고품질로 렌더링해 주세요. 텍스트가 있다면 다국어 지원으로 정확하게 렌더링해 주세요.");
-  } else if (model === "nano_banana_2") {
-    sentences.push("2K 이상 해상도, 정확한 비율과 균형 잡힌 디테일로 렌더링해 주세요.");
-  } else {
-    sentences.push("게임 에셋으로 바로 쓸 수 있도록 깔끔하고 알아보기 쉬운 상업 품질로 렌더링해 주세요.");
-  }
-
-  // 회피 요소
-  if (en.negative) {
-    const negs = input.negativeChecks
-      .map((v) => NEGATIVE_OPTIONS.find((o) => o.value === v)?.label)
-      .filter((x): x is string => !!x);
-    const customNeg = (input.negativeCustom ?? "").trim();
-    if (customNeg) negs.push(customNeg);
-    if (negs.length > 0) sentences.push(`다음은 빼주세요: ${negs.join(", ")}.`);
-  }
+  // 모델별 해상도/capability 자동 안내는 제거됨 (v0.8).
+  // 사용자가 원하면 한글 메모(작가 메모) 또는 영어 보충 입력에 직접 적어 통제한다.
 
   return sentences.join(" ");
 }
