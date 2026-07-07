@@ -1,12 +1,12 @@
 "use client";
 
-// AI Prompt Generator v0.6 (rebuild)
-// - 작업 유형 5종(캐릭터/배경/프레임/아이콘/오브젝트), 배너 제거
+// AI Prompt Generator v0.8
+// - 작업 유형 5종(캐릭터/배경/프레임/아이콘/오브젝트)
 // - 한글 자유입력은 "원본 한글 메모"로만 표시되고 최종 영어 프롬프트에 포함되지 않음
-// - 영어 보충 입력만 실제 모델 프롬프트에 반영
-// - "입력 내용을 옵션으로 정리하기" 버튼: 키워드 매칭으로 옵션 자동 채우기 (API 미사용)
-// - 참고 이미지 최대 3장, 각 이미지마다 역할 선택
-// - 모델 카드 4종 + 정리된 요청 요약 + 수정 요청용
+//   (GPT/Nano 한국어 토글의 "작가 메모"는 예외)
+// - 옵션 채우기 2종: 키워드 매칭(무료) + Gemini AI 분석(유료, /api/ai/* 서버 라우트)
+// - AI 번역, 참고 이미지 최대 3장(슬롯별 역할 + AI 분석)
+// - 모델 카드 4종 + 정리된 요청 요약 + 수정 요청용, Clay 디자인 + 다크 모드
 
 import {
   ChangeEvent,
@@ -27,6 +27,7 @@ import {
   Moon,
   Plus,
   ChevronDown,
+  ExternalLink,
 } from "lucide-react";
 
 import {
@@ -96,6 +97,7 @@ import {
   NANO_OPTIONS,
   MJ_OPTIONS,
   NIJI_OPTIONS,
+  containsKorean,
 } from "@/lib/options";
 
 import { extractOptions, applyHintsToInput, countAppliedHints } from "@/lib/keywordExtract";
@@ -185,9 +187,6 @@ export default function HomePage() {
     setExtractMessage(null);
     try {
       const hints = await aiExtractOptions(memo, eng);
-      // 디버깅: 응답 형식 확인용 (개발자도구 콘솔)
-      // eslint-disable-next-line no-console
-      console.log("[AI extract hints]", hints);
       setInput((p) => mergeAiHints(p, hints));
       setLastExtractedKey(`${memo}\n${eng}`);
       setExtractMessage("✓ AI 옵션 채우기 완료. 아래 옵션 그룹을 펼쳐서 확인하세요.");
@@ -229,9 +228,6 @@ export default function HomePage() {
     setExtractMessage(null);
     try {
       const result = await aiAnalyzeImage(ref.src, ref.role);
-      // 디버깅: 응답 형식 확인용 (개발자도구 콘솔)
-      // eslint-disable-next-line no-console
-      console.log(`[AI image #${idx + 1} result]`, result);
       setInput((p) => mergeAiHints(p, result.hints));
       setLastAnalyzedKey((prev) => ({ ...prev, [idx]: `${ref.src}|${ref.role}` }));
       setImageDescriptions((prev) => ({ ...prev, [idx]: result.description ?? "" }));
@@ -263,6 +259,13 @@ export default function HomePage() {
   const handleReset = () => {
     setInput(DEFAULT_INPUT);
     setExtractMessage(null);
+    setTranslateMessage(null);
+    // AI 분석 설명, 슬롯 열림 상태, "이미 번역/분석했음" 기록도 함께 초기화
+    setImageDescriptions({});
+    setActiveSlots([true, false, false]);
+    setLastAnalyzedKey({});
+    setLastTranslatedMemo("");
+    setLastExtractedKey("");
   };
 
   // === 입력 업데이트 헬퍼 ===
@@ -331,7 +334,26 @@ export default function HomePage() {
             <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-[#9f9b93]">AI Prompt Generator</p>
             <h1 className="text-2xl font-black tracking-tight">멀티 모델 이미지 프롬프트 도구</h1>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 이미지 생성 사이트 바로가기 — 프롬프트 복사 후 바로 이동 */}
+            {[
+              { label: "GPT Image", href: "https://chatgpt.com/", title: "ChatGPT 열기 — GPT Image 프롬프트 붙여넣기" },
+              { label: "Nano Banana", href: "https://gemini.google.com/", title: "Gemini 열기 — Nano Banana 프롬프트 붙여넣기" },
+              { label: "Midjourney", href: "https://www.midjourney.com/", title: "Midjourney 열기 — 프롬프트 붙여넣기 (--ar 등 파라미터는 직접 추가)" },
+            ].map((site) => (
+              <a
+                key={site.label}
+                href={site.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={site.title}
+                className="clay-hover inline-flex items-center gap-1.5 rounded-full border border-[#dad4c8] bg-white px-3.5 py-2.5 text-sm font-semibold text-[#1a1a1a] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#f5f3ee]"
+              >
+                <ExternalLink size={14} className="text-[#078a52] dark:text-[#84e7a5]" />
+                {site.label}
+              </a>
+            ))}
+            <span className="mx-1 hidden h-6 w-px bg-[#dad4c8] dark:bg-[#3a352e] md:block" />
             <button
               type="button"
               onClick={toggleDark}
@@ -914,6 +936,11 @@ function OptionPicker({
           </button>
         )}
       </div>
+      {isCustom && containsKorean(customText) && (
+        <p className="mt-1.5 rounded-xl bg-red-50 p-2 text-[11px] font-semibold text-red-600 dark:bg-red-950/40 dark:text-red-300">
+          한글은 영어 프롬프트에 들어가지 않습니다 — 영어로 적어 주세요.
+        </p>
+      )}
       {showMore && moreOptions && (
         <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-xl bg-[#faf9f7] p-2 dark:bg-[#2c2925]">
           {moreOptions.map((o) => (
@@ -1058,6 +1085,11 @@ function StylePicker({
             />
           )}
         </div>
+      {isCustom && containsKorean(customText) && (
+        <p className="mt-1.5 rounded-xl bg-red-50 p-2 text-[11px] font-semibold text-red-600 dark:bg-red-950/40 dark:text-red-300">
+          한글은 영어 프롬프트에 들어가지 않습니다 — 영어로 적어 주세요.
+        </p>
+      )}
 
         {/* 2단계: 펼친 카테고리의 스타일 */}
         {openCategory && (
@@ -1309,7 +1341,7 @@ function ReferenceSlot({
                     />
                   ) : (
                     <div className="rounded border border-dashed border-[#dad4c8] bg-white p-2 text-[11px] leading-relaxed text-[#9f9b93] dark:border-[#3a352e] dark:bg-[#2a2723] dark:text-[#9f9b93]">
-                      AI 설명이 비어 있습니다. 재분석을 시도하거나, 역할을 다른 값으로 바꿔서 다시 분석해 보세요. (브라우저 콘솔 F12 → Console 탭에서 <code className="rounded bg-[#eee9df] px-1 py-0.5 text-[10px] dark:bg-[#2c2925]">[AI image #N result]</code> 로그도 확인할 수 있어요)
+                      AI 설명이 비어 있습니다. 재분석을 시도하거나, 역할을 다른 값으로 바꿔서 다시 분석해 보세요.
                     </div>
                   )}
                   {description && (

@@ -143,7 +143,12 @@ export async function aiAnalyzeImage(
 }
 
 // AI hints를 PromptInput에 병합. 빈 문자열은 옵션 슬롯 무효화 방지를 위해 무시.
+// AI가 잘못된 값(존재하지 않는 작업 유형/스타일/비율/슬롯 키)을 보내도
+// 화면 상태가 깨지지 않도록 허용된 값만 반영합니다.
 import type { PromptInput, WorkType } from "./promptBuilder";
+import { STYLE_OPTIONS, ASPECT_RATIO_OPTIONS } from "./options";
+
+const VALID_WORK_TYPES: readonly string[] = ["character", "background", "frame", "icon", "object"];
 
 export function mergeAiHints(prev: PromptInput, hints: AiExtractHints): PromptInput {
   const next: PromptInput = {
@@ -155,16 +160,25 @@ export function mergeAiHints(prev: PromptInput, hints: AiExtractHints): PromptIn
     enabled: { ...prev.enabled },
   };
 
-  if (hints.workType && hints.workType !== "") next.workType = hints.workType as WorkType;
-  if (hints.style && hints.style !== "") next.style = hints.style;
+  // 작업 유형/스타일/비율은 허용된 값 목록에 있을 때만 반영
+  if (hints.workType && VALID_WORK_TYPES.includes(hints.workType)) {
+    next.workType = hints.workType as WorkType;
+  }
+  if (hints.style && STYLE_OPTIONS.some((o) => o.value === hints.style)) {
+    next.style = hints.style;
+  }
   if (typeof hints.styleCustom === "string") next.styleCustom = hints.styleCustom;
-  if (hints.aspectRatio && hints.aspectRatio !== "") next.aspectRatio = hints.aspectRatio;
+  if (hints.aspectRatio && ASPECT_RATIO_OPTIONS.some((o) => o.value === hints.aspectRatio)) {
+    next.aspectRatio = hints.aspectRatio;
+  }
   if (typeof hints.aspectRatioCustom === "string") next.aspectRatioCustom = hints.aspectRatioCustom;
 
   const applyGroup = <T extends object>(target: T, src?: Record<string, string | null | undefined>) => {
     if (!src) return;
     for (const [k, v] of Object.entries(src)) {
       if (v == null) continue;
+      // 존재하지 않는 슬롯 키는 무시 (AI가 엉뚱한 키를 보내도 상태가 오염되지 않게)
+      if (!(k in target)) continue;
       // 옵션 슬롯의 빈 문자열은 무시. *Custom 필드는 빈 문자열도 의미 있음(=입력 없음)
       if (v === "" && !k.endsWith("Custom")) continue;
       (target as any)[k] = v;

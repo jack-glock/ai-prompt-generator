@@ -1,10 +1,11 @@
-// 프롬프트 빌더 (v0.6 재구조화)
+// 프롬프트 빌더 (v0.8)
 // - 작업 유형 5종(character/background/frame/icon/object)
 // - 한글 자유입력은 "원본 한글 메모"로만 노출되고, 최종 영어 프롬프트에는
-//   절대 포함되지 않습니다.
-// - 영어 보충 입력은 모든 모델 프롬프트에 그대로 반영됩니다.
+//   절대 포함되지 않습니다. (GPT/Nano 한국어 빌더의 "작가 메모"는 예외)
+// - 영어 보충 입력은 모든 영어 프롬프트에 그대로 반영됩니다.
 // - 옵션은 한글 라벨로 UI에 표시되고, 영어 표현은 lib/options.ts에서 가져옵니다.
-// - API 미사용. 키워드 매칭으로만 자동 정리(lib/keywordExtract.ts).
+// - 이 파일 자체는 API를 쓰지 않는 순수 함수 모음입니다.
+//   (AI 번역/옵션 채우기/이미지 분석은 lib/aiClient.ts + app/api/ai/* 서버 라우트 담당)
 
 import {
   ModelKey,
@@ -224,7 +225,9 @@ function resolveAspectRatio(input: PromptInput): string {
   if (!item) return "1:1";
   if (item.en === "__custom__") {
     const t = (input.aspectRatioCustom ?? "").trim();
-    return t || "1:1";
+    // 한글이 섞인 직접 입력은 영어 프롬프트에 못 들어가므로 기본값으로 대체
+    if (!t || containsKorean(t)) return "1:1";
+    return t;
   }
   return item.en;
 }
