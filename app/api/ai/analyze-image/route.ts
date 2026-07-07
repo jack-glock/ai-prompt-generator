@@ -213,8 +213,10 @@ JSON:`;
         ],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 1500,
+          // thinking 토큰이 출력 한도를 잡아먹지 않도록 끄고 한도를 넉넉히
+          maxOutputTokens: 4096,
           responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     });

@@ -190,8 +190,11 @@ JSON:`;
         contents: [{ parts: [{ text: systemPrompt }] }],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 2000,
+          // gemini-2.5-flash는 thinking 모델 — 생각 토큰이 출력 한도를 잡아먹어
+          // JSON이 중간에 잘리는 문제가 있어 thinking을 끄고 한도를 넉넉히 잡는다.
+          maxOutputTokens: 8192,
           responseMimeType: "application/json",
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     });
@@ -206,16 +209,39 @@ JSON:`;
     }
 
     const data = await upstream.json();
+    const finishReason: string | undefined = data?.candidates?.[0]?.finishReason;
     const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     if (!text) {
-      return NextResponse.json({ error: "AI가 빈 응답을 보냈습니다." }, { status: 502 });
+      const reason =
+        finishReason && finishReason !== "STOP"
+          ? `AI 응답이 비정상 종료됐습니다 (사유: ${finishReason}). 다시 시도해 주세요.`
+          : "AI가 빈 응답을 보냈습니다.";
+      return NextResponse.json({ error: reason }, { status: 502 });
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      return NextResponse.json({ error: "AI 응답을 파싱할 수 없습니다." }, { status: 502 });
+      // 응답이 잘렸거나 앞뒤에 여분 텍스트가 붙은 경우: 첫 '{'부터 마지막 '}'까지 재시도
+      const start = text.indexOf("{");
+      const end = text.lastIndexOf("}");
+      if (start >= 0 && end > start) {
+        try {
+          parsed = JSON.parse(text.slice(start, end + 1));
+        } catch {
+          /* 아래에서 에러 반환 */
+        }
+      }
+      if (parsed === undefined) {
+        console.error("Extract parse failure:", finishReason, text.slice(0, 500));
+        const suffix =
+          finishReason && finishReason !== "STOP" ? ` (종료 사유: ${finishReason})` : "";
+        return NextResponse.json(
+          { error: `AI 응답을 해석하지 못했습니다${suffix}. 잠시 후 다시 시도해 주세요.` },
+          { status: 502 }
+        );
+      }
     }
 
     return NextResponse.json({ hints: parsed });

@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
         contents: [{ parts: [{ text: systemPrompt }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 1500,
+          // thinking 토큰이 번역문을 잘라먹지 않도록 끄고 한도를 넉넉히
+          maxOutputTokens: 2048,
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
     });
