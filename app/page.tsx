@@ -338,7 +338,7 @@ export default function HomePage() {
             {/* 이미지 생성 사이트 바로가기 — 프롬프트 복사 후 바로 이동 */}
             {[
               { label: "GPT Image", href: "https://chatgpt.com/", title: "ChatGPT 열기 — GPT Image 프롬프트 붙여넣기" },
-              { label: "Nano Banana", href: "https://gemini.google.com/", title: "Gemini 열기 — Nano Banana 프롬프트 붙여넣기" },
+              { label: "Nano Banana", href: "https://aistudio.google.com/", title: "Google AI Studio 열기 — Nano Banana 모델 선택 후 프롬프트 붙여넣기" },
               { label: "Midjourney", href: "https://www.midjourney.com/", title: "Midjourney 열기 — 프롬프트 붙여넣기 (--ar 등 파라미터는 직접 추가)" },
             ].map((site) => (
               <a
